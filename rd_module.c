@@ -13,6 +13,7 @@ static bitmap_t * bitmap_ptr;  // point to the start of bitmap blocks
 static void * content_block_ptr;  // point to the start of the content blocks
 
 static inode_t * err_inode;
+static dir_entry_t * err_dir_entry;
 
 static int rd_ioctl (struct inode * inode, struct file * file,
 		unsigned int cmd, unsigned long arg);
@@ -59,65 +60,116 @@ void my_printk(char *string)
 }
 
 /*
+ * find the file entry with name = file_name in dir_inode.
+ * if found, return the directory entry of corresponding file and set flag = 1
+ * if not found, set flag = 0
+ * return the pointer to the next available entry if it is within allocated block
+ * return err_dir_entry otherwise
+ */
+dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int * flag) {
+
+	int checked_entries = 0;
+
+	/* first walk through direct block ptrs */
+	for (int block_ptr = 0; block_ptr < NUM_DIRECT_BLOCK_PTR; block_ptr++) {
+		/* check every entry in the block */
+		for (int entry = 0; entry < NUM_ENTRIES_PER_BLOCK; entry ++) {
+
+			// checked all of the entries in this directory and couldn't find file
+			if (checked_entries * sizeof(dir_entry_t) == dir_inode->size) {
+				* flag = 0;
+				// current block is full
+				if (entry == NUM_ENTRIES_PER_BLOCK - 1) {
+					return err_dir_entry;
+				}
+
+				return (dir_entry_t *) dir_inode->location[block_ptr] + (entry + 1);
+			}
+
+			dir_entry_t * curr_entry = (dir_entry_t *) dir_inode->location[block_ptr] + entry;
+
+			// found an entry with name == file_name
+			if ( strcmp( curr_entry->fname, file_name ) == 0 ) {
+				* flag = 1;
+				return curr_entry;
+			}
+
+			checked_entries ++;
+
+		}
+	}
+
+	/* TODO: walk through single/double indirect block pointer... */
+	return err_dir_entry;
+}
+
+/*
  * traverse path_name to find and return the parent's inode of corresponding file.
  * path_name will be set to the corresponding file's name when func return.
+ * ASSUMPTION: the path must always be valid, the file may or may not be created.
+ * i.e.: path=/root/work/file.c
+ * 		- /root/work must already be in the filesystem.
+ * 		- file.c may or may not be created
  */
 inode_t * traverse(char * path_name) {
 
 	if (* path_name == '\0')
 		return err_inode;
 
-	char * curr_file_name;
-
-	char * dir_name;
+	char * file_name;
 	inode_t * curr_inode = inode_array_ptr;  // start with the root dir
+	inode_t * prev_inode;
+	dir_entry_t * entry;
 
-	while ( (dir_name = strsep(&path_name, "/")) != NULL ) {
-		/* find the dir_entry with name = dir_name inside curr_inode */
-		int checked_entries = 0;
-		int found_entry = 0;
+	while ( (file_name = strsep(&path_name, "/")) != NULL ) {
+		int flag = 0;
+		entry = find_file_entry_in_dir(curr_inode, file_name, &flag);
 
-		// first walk through direct block pointers to find entry dir_name
-		for (int i = 0; i < NUM_DIRECT_BLOCK_PTR; i ++)
-		{
-			// each block can have maximum 256 bytes / 16 bytes per entry = 16 entries
-			for (int j = 0; j < NUM_ENTRIES_PER_BLOCK; j ++) {
-
-				// checked all of the entries in current directory
-				if (checked_entries * sizeof(dir_entry_t) == curr_inode->size)
-					return err_inode;
-
-				dir_entry_t * curr_dir_entry = ( (dir_entry_t *) curr_inode->location[i] ) + j;
-
-				// found an entry with fname == dir_name
-				if ( strcmp(curr_dir_entry->fname, dir_name) == 0 ) {
-					curr_inode = inode_array_ptr + curr_dir_entry->inode_number;
-					found_entry = 1;
-					break;
-				}
-				checked_entries ++;
-			}
-
-			// found the entry in one of the direct block ptr locations
-			if (found_entry == 1) {
-				break;
-			}
+		/* there is no file with name = file_name in directory */
+		if (flag == 0) {
+			break;
 		}
 
-		// NOTE: walk through single/double indirect block pointer here...
-		//if (found_entry == 0) {
-			// walk through single-indirect block pointer
-			// walk thorugh double-indirect block pointer
-		//}
-
-		// save dir_name to curr_file_name
-		strcpy(curr_file_name, dir_name);
+		prev_inode = curr_inode;
+		curr_inode = inode_array_ptr + entry->inode_number;
 	}
 
-	strcpy(path_name, curr_file_name);  // set path_name to file's name before return
+	strcpy(path_name, entry->fname);
+
+	// if there is a file with the same name
+	if (file_name == NULL)
+		return prev_inode;
+
 	return curr_inode;
 
 }
+
+/*
+ * create a regular file with name = file_name and mode = mode in the parent dir.
+ * if there is a file with the same name, return 1.
+ * if there is no more content block/ inode left, return 1.
+ * if create successfully, return 0.
+ */
+int create_reg_file ( inode_t * parent_inode, char * file_name, char mode ) {
+
+	int flag = 0;
+	dir_entry_t * entry = find_file_entry_in_dir(parent_inode, file_name, &flag);
+
+	/* file with the same name already exist. */
+	if (flag == 1)
+		return 1;
+
+	/* allocated blocks are full -> allocate new block to store new entry */
+	if (entry == err_dir_entry) {
+
+	}
+
+	strcpy(entry->fname, file_name);
+	entry->inode_number = inode_number;
+	return 0;
+}
+
+
 
 /***
  * ioctl() entry point...
@@ -161,12 +213,11 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			char * path_name = &creat_arg->path_name[1];  // ignore the leading '/' from path_name input
 			inode_t * parent_inode = traverse(path_name);
 
-			// cannot find parent_inode
-			// if (parent_inode == err_inode)...
-
 			char * file_name = path_name;
 
-			create_entry(parent_inode, file_name);
+			int create_status = create_reg_file(parent_inode, file_name, creat_arg->mode);
+
+			// TODO: ERROR CHECKING with create_status...
 
 	}
 }

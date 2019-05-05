@@ -1,9 +1,10 @@
 /* ramdisk constants */
 #define MEM_SIZE 2097152  // 2MB
+#define BLOCK_SIZE 256
 #define NUM_INODE 1024  // 256 blocks of inode, block size = 256 bytes, inode size = 64 byte
 #define MAX_NUM_AVAILABLE_BLOCK 7931  // 2MB = 8192 * (256 byte) blocks - (superblock + inode blocks + bitmap blocks)
-#define MAX_PNAME_LENGTH 60
-#define NUM_DIRECT_BLOCK_PTR 1
+#define MAX_PNAME_LENGTH 200
+#define NUM_DIRECT_BLOCK_PTR 8
 #define NUM_ENTRIES_PER_BLOCK 16
 
 #define DIR_T 0
