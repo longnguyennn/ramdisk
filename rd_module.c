@@ -5,12 +5,16 @@
 #include <asm/uaccess.h>
 #include <linux/tty.h>
 #include <linux/sched.h>
+#include <linux/vmalloc.h>
+
 #include "rd_module.h"
 #include "rd.h"
+
 
 MODULE_LICENSE("GPL"); 
 
 static superblock_t * sb_ptr;  // point to superblock
+
 static inode_t * inode_array_ptr;  // point to the start of inode array
 static bitmap_t * bitmap_ptr;  // point to the start of bitmap blocks
 static void * content_block_ptr;  // point to the start of the content blocks
@@ -26,7 +30,7 @@ static struct file_operations rd_proc_operations;
 static struct proc_dir_entry * proc_entry;
 
 static int __init initialization_routine (void) {
-	printk("<rd> Loading module.\n");
+	printk("Loading module.\n");
 
 	rd_proc_operations.ioctl = rd_ioctl;
 
@@ -34,7 +38,7 @@ static int __init initialization_routine (void) {
 	proc_entry = create_proc_entry("ramdisk", 0444, NULL);
 	if (!proc_entry)
 	{
-		printk("<rd> Error creating /proc entry.\n");
+		printk("Error creating /proc entry.\n");
 		return 1;
 	}
 
@@ -44,8 +48,9 @@ static int __init initialization_routine (void) {
 }
 
 static void __exit cleanup_routine (void) {
-	printk("<rd> Dumping module.\n");
+	printk("Dumping module.\n");
 	remove_proc_entry("ramdisk", NULL);
+	vfree(memory);
 	return;
 }
 
@@ -74,9 +79,11 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
 	int checked_entries = 0;
 
 	/* first walk through direct block ptrs */
-	for (int block_ptr = 0; block_ptr < NUM_DIRECT_BLOCK_PTR; block_ptr++) {
+	int block_ptr;
+	for (block_ptr = 0; block_ptr < NUM_DIRECT_BLOCK_PTR; block_ptr++) {
 		/* check every entry in the block */
-		for (int entry = 0; entry < NUM_ENTRIES_PER_BLOCK; entry ++) {
+		int entry;
+		for (entry = 0; entry < NUM_ENTRIES_PER_BLOCK; entry ++) {
 
 			// checked all of the entries in this directory and couldn't find file
 			if (checked_entries * sizeof(dir_entry_t) == dir_inode->size) {
@@ -116,14 +123,14 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
  */
 inode_t * traverse(char * path_name) {
 
+	char * file_name;
+	dir_entry_t * entry;
+	inode_t * prev_inode;
+	inode_t * curr_inode = inode_array_ptr;
+
 	// this should never be the case
 	if (* path_name == '\0')
 		return &err_inode;
-
-	char * file_name;
-	inode_t * curr_inode = inode_array_ptr;  // start with the root dir
-	inode_t * prev_inode;
-	dir_entry_t * entry;
 
 	while ( (file_name = strsep(&path_name, "/")) != NULL ) {
 		int flag = 0;
@@ -176,8 +183,8 @@ int create_reg_file ( inode_t * parent_inode, char * file_name, char mode ) {
 		   return -1;
 
 		/* allocate new direct block pointer */
-		if (parent_inode->size < NUM_DIRECT_BLOCK_PTR * BLOCK_SIZE) {
-			int next_block_ptr = parent_inode->size / BLOCK_SIZE;
+		if (parent_inode->size < NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE) {
+			int next_block_ptr = parent_inode->size / _BLOCK_SIZE;
 			parent_inode->location[next_block_ptr] = get_available_block();
 			entry = (dir_entry_t *) parent_inode->location[next_block_ptr];
 		}
@@ -213,11 +220,12 @@ int create_reg_file ( inode_t * parent_inode, char * file_name, char mode ) {
 /* return the address of an available block and mark that block as used in the bitmap.
  * this func should be called after checking sb_ptr->num_free_blocks to avoid potential misbehavior.
  */
-void * get_available_block() {
+void * get_available_block(void) {
 
 	/* walk through the bitmap and check each bit. */
 	int curr_block = 0;  // index into content block array
-	for (int i = 0; i < BITMAP_ARR_LENGTH; i ++) {
+	int i;
+	for (i = 0; i < BITMAP_ARR_LENGTH; i ++) {
 		char byte = bitmap_ptr->array[i];
 
 		/* first bit is not set */
@@ -279,11 +287,12 @@ void * get_available_block() {
 /* return the idx into the inode array of an available inode and mark it as used in bitmap.
  * this func should be called after checking sb_ptr->num_free_blocks to avoid potential misbehavior.
  */
-int get_available_inode_idx() {
+int get_available_inode_idx(void) {
 
 	/* walk through the bitmap and check each bit. */
 	int idx = 0;
-	for (int i = 0; i < INODE_BITMAP_LENGTH; i ++ ) {
+	int i;
+	for (i = 0; i < INODE_BITMAP_LENGTH; i ++ ) {
 		char byte = sb_ptr->inode_bitmap[i];
 
 		/* first bit is not set */
@@ -351,9 +360,9 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 {
 	switch (cmd) {
 
-		case INIT:
+		case RD_INIT: ;
 			/* allocate memory */
-			void * memory = vmalloc (MEM_SIZE);
+			memory = vmalloc (MEM_SIZE);
 
 			/* initialize superblock */
 			sb_ptr = (superblock_t *) memory;
@@ -373,28 +382,42 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			root_inode->type = DIR_T;
 			root_inode->size = 0;  // currently empty
 			root_inode->location[0] = content_block_ptr;  // first content block
-			root_inode->access_right = RW;
+			root_inode->access_right = READ_WRITE;
 
 			sb_ptr->inode_bitmap[0] = 128;  // mark the first inode as used (128 = 0x1000000)
 			sb_ptr->num_free_inodes -= 1;
 
 			//bitmap_ptr->array[0] = 128;  // mark the first content block as used (128 = 0x10000000)
 			//sb_ptr->num_free_blocks -= 1;
+			//
 
-		case CREAT:
+			break;
+
+		case RD_CREAT: ;
 			/* get input from user space */
 			creat_arg_t creat_arg;
 			copy_from_user(&creat_arg, (creat_arg_t *) arg, sizeof(creat_arg_t));
 
 			/* find the parent dir inode of given path_name */
-			char * path_name = &creat_arg->path_name[1];  // ignore the leading '/' from path_name input
+			char * path_name = &creat_arg.path_name[1];  // ignore the leading '/' from path_name input
 			inode_t * parent_inode = traverse(path_name);
 
 			char * file_name = path_name;
 
-			int create_status = create_reg_file(parent_inode, file_name, creat_arg->mode);
+			int create_status = create_reg_file(parent_inode, file_name, creat_arg.mode);
 
-			// TODO: ERROR CHECKING with create_status...
+			copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &create_status, sizeof(int));
+
+			break;
+
+		default:
+			return -EINVAL;
+			break;
 
 	}
+
+	return 0;
 }
+
+module_init(initialization_routine);
+module_exit(cleanup_routine);
