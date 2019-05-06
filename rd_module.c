@@ -115,13 +115,13 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
 
 /*
  * traverse path_name to find and return the parent's inode of corresponding file.
- * path_name will be set to the corresponding file's name when func return.
+ * f_name will be set to the corresponding file's name when func return.
  * ASSUMPTION: the path must always be valid, the file may or may not be created.
  * i.e.: path=/root/work/file.c
  * 		- /root/work must already be in the filesystem.
  * 		- file.c may or may not be created
  */
-inode_t * traverse(char * path_name) {
+inode_t * traverse(char * path_name, char * f_name) {
 
 	char * file_name;
 	dir_entry_t * entry;
@@ -147,11 +147,11 @@ inode_t * traverse(char * path_name) {
 
 	// if there is a file with the same name
 	if (file_name == NULL) {
-		strcpy(path_name, entry->fname);
+		strcpy(f_name, entry->fname);
 		return prev_inode;
 	}
 
-	strcpy(path_name, file_name);
+	strcpy(f_name, file_name);
 	return curr_inode;
 
 }
@@ -412,9 +412,9 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 
 			/* find the parent dir inode of given path_name */
 			char * path_name = &creat_arg.path_name[1];  // ignore the leading '/' from path_name input
-			inode_t * parent_inode = traverse(path_name);
+			char file_name[14];
 
-			char * file_name = path_name;
+			inode_t * parent_inode = traverse(path_name, file_name);
 
 			int create_status = create_reg_file(parent_inode, file_name, creat_arg.mode);
 

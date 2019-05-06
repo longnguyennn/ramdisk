@@ -20,13 +20,11 @@ int rd_creat(char * pathname, mode_t mode) {
 		free(ptr);
 	}
 
-//	creat_arg_t arg;
-//	strcpy(arg.path_name, pathname);
-//	arg.mode = mode;
-//
-//	ioctl (fd, RD_CREAT, &arg);
+	creat_arg_t arg;
+	strcpy(arg.path_name, pathname);
+	arg.mode = mode;
 
-//	return arg.retval;
+	ioctl (fd, RD_CREAT, &arg);
 
-	return 1;
+	return arg.retval;
 }

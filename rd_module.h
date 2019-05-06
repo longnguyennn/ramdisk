@@ -41,7 +41,7 @@ typedef struct {
 
 /* function headers */
 dir_entry_t * find_file_entry_in_dir(inode_t *, char *, int *);
-inode_t * traverse(char *);
+inode_t * traverse(char *, char *);
 int create_reg_file(inode_t *, char *, mode_t);
 void * get_available_block(void);
 int get_available_inode_idx(void);
