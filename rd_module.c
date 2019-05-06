@@ -6,6 +6,7 @@
 #include <linux/tty.h>
 #include <linux/sched.h>
 #include <linux/vmalloc.h>
+#include <linux/types.h>
 
 #include "rd_module.h"
 #include "rd.h"
@@ -160,7 +161,7 @@ inode_t * traverse(char * path_name) {
  * if there is no more content block/ inode left, return -1.
  * if create successfully, return 0.
  */
-int create_reg_file ( inode_t * parent_inode, char * file_name, char mode ) {
+int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
 
 	/* no inode available */
 	if (sb_ptr->num_free_inodes == 0)
@@ -380,7 +381,7 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			root_inode->type = DIR_T;
 			root_inode->size = 0;  // currently empty
 			root_inode->location[0] = content_block_ptr;  // first content block
-			root_inode->access_right = READ_WRITE;
+			root_inode->access_right = RW;
 
 			sb_ptr->inode_bitmap[0] = 128;  // mark the first inode as used (128 = 0x1000000)
 			sb_ptr->num_free_inodes -= 1;
@@ -388,6 +389,18 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			//bitmap_ptr->array[0] = 128;  // mark the first content block as used (128 = 0x10000000)
 			//sb_ptr->num_free_blocks -= 1;
 			//
+
+			printk("superblock_t = %d\n", sizeof(superblock_t));
+			printk("inode_t = %d\n", sizeof(inode_t));
+			printk("bitmap_ptr = %d\n", sizeof(bitmap_t));
+			printk("dir_entry_t = %d\n", sizeof(dir_entry_t));
+
+			printk("Layout addr = ... \n");
+
+			printk("0x%p\n", sb_ptr);
+			printk("0x%p\n", inode_array_ptr);
+			printk("0x%p\n", bitmap_ptr);
+			printk("0x%p\n", content_block_ptr);
 
 			break;
 
