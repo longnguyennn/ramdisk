@@ -9,12 +9,6 @@
 #define BITMAP_ARR_LENGTH 1024
 #define INODE_BITMAP_LENGTH 240
 
-#define DIR_T 0
-#define REG_T 1
-#define R_ONLY 0
-#define W_ONLY 1
-#define RW 2
-
 /* ioctl operations */
 #define INIT _IOW(0, 1, char)
 #define CREAT _IOW(0, 2, char)
@@ -44,15 +38,6 @@ typedef struct {
 	char fname[14];
 	int inode_number;
 } dir_entry_t;
-
-typedef struct {
-	char path_name[MAX_PNAME_LENGTH];
-	char mode;
-} creat_arg_t;
-
-typedef struct {
-	char path_name[MAX_PNAME_LENGTH];
-} mkdir_arg_t;
 
 /* function headers */
 dir_entry_t * find_file_entry_in_dir(inode_t *, char *, int *);
