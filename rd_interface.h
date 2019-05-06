@@ -1,6 +1,4 @@
-struct mode_t {
-    // TODO: Fill out mode struct
-};
+typedef char mode_t;
 
 int rd_creat(char *pathname, mode_t mode);
 int rd_mkdir(char *pathname);
