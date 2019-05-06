@@ -10,9 +10,11 @@
 #include "rd_module.h"
 #include "rd.h"
 
-MODULE_LICENSE("GPL"); static superblock_t * sb_ptr;  // point to superblock
 
-static void * memory;
+MODULE_LICENSE("GPL"); 
+
+static superblock_t * sb_ptr;  // point to superblock
+
 static inode_t * inode_array_ptr;  // point to the start of inode array
 static bitmap_t * bitmap_ptr;  // point to the start of bitmap blocks
 static void * content_block_ptr;  // point to the start of the content blocks
