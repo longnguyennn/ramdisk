@@ -28,6 +28,7 @@ static dir_entry_t err_dir_entry;
 static int ioctl_success = 0;
 static int ioctl_error = -1;
 
+
 static int rd_ioctl (struct inode * inode, struct file * file,
 		unsigned int cmd, unsigned long arg);
 
@@ -599,15 +600,13 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			open_arg_t open_arg;
 			copy_from_user(&open_arg, (open_arg_t *) arg, sizeof(open_arg_t));
 
-			path_name = &open_arg.path_name[1];  // ignore leading '/' from path_name input
+			char *path_name = &open_arg.path_name[1];  // ignore leading '/' from path_name input
 			inode_t * inode = find_inode(path_name);
-
 			// cannot find inode with given pathname
 			if (inode == &err_inode) {
 				copy_to_user((int *) & ( (open_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
 				break;
 			}
-
 			// check file permission vs. flags
 			int permission = check_file_permission(open_arg.flags, inode->access_right);
 			if (!permission) {
@@ -623,7 +622,7 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			// check if this process is already in process_table
 			int i;
 			for (i = 0; i < MAX_NUM_PROCESS; i ++) {
-				if (process_table[i] == pid) {
+				if (sb_ptr->process_table[i] == pid) {
 					proc_idx = i;
 					break;
 				}
@@ -632,8 +631,8 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			// put this process in process_table if 1st time run
 			if (proc_idx == -5) {
 				for (i = 0; i < MAX_NUM_PROCESS; i ++) {
-					if (process_table[i] == PROC_UNINITIALIZED) {
-						process_table[i] = pid;
+					if (sb_ptr->process_table[i] == PROC_UNINITIALIZED) {
+						sb_ptr->process_table[i] = pid;
 						proc_idx = i;
 						break;
 					}
@@ -646,13 +645,14 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			// check if file is already open in the file descriptor table
 			for (i = 0; i < MAX_OPEN_FILE; i ++ ) {
 				file_t * file = proc_fdt + i;
+
 				if (file->position != FILE_UNINITIALIZED && file->inode_ptr == inode) {
 					copy_to_user((int *) & ( (open_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
-					break;
+					return -1;
 				}
 			}
-
 			// find an empty entry in file descriptor table
+			int found = 0;
 			for (i = 0; i < MAX_OPEN_FILE; i ++) {
 				file_t * file = proc_fdt + i;
 
@@ -660,13 +660,14 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 					file->position = 0;
 					file->inode_ptr = inode;
 					copy_to_user((int *) & ( (open_arg_t *) arg ) -> retval, &i, sizeof(int));
+					found = 1;
 					break;
 				}
 			}
 
-
 			/* file descriptor table is full (this shouldn't be the case) */
-			copy_to_user((int *) & ( (open_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+			if (!found)
+				copy_to_user((int *) & ( (open_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
 
 			break;
 		}

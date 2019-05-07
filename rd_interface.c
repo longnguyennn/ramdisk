@@ -22,12 +22,26 @@ int rd_creat(char * pathname, mode_t mode) {
 	return arg.retval;
 }
 
-int rd_mkdir(char *path_name) {
+int rd_mkdir(char *pathname) {
 	int fd = open("/proc/ramdisk", O_RDONLY );
 	mkdir_arg_t arg;
-	strcpy(arg.path_name, path_name);
+	strcpy(arg.path_name, pathname);
 
 	ioctl(fd, RD_MKDIR, &arg);
+
+	close(fd);
+
+	return arg.retval;
+}
+
+int rd_open(char *pathname, int flags) {
+	int fd = open("/proc/ramdisk", O_RDONLY );
+	open_arg_t arg;
+	strcpy(arg.path_name, pathname);
+	arg.flags = flags;
+	arg.pid = getpid();
+	printf( "I'm process %d\n", arg.pid );
+	ioctl(fd, RD_OPEN, &arg);
 
 	close(fd);
 
