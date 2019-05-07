@@ -118,10 +118,8 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
 /*
  * traverse path_name to find and return the parent's inode of corresponding file.
  * f_name will be set to the corresponding file's name when func return.
- * ASSUMPTION: the path must always be valid, the file may or may not be created.
- * i.e.: path=/root/work/file.c
- * 		- /root/work must already be in the filesystem.
- * 		- file.c may or may not be created
+ * if pathname prefix is invalid, return err_inode.
+ * i.e.: path_name=/root/work/file.c where directory 'work' does not exist.
  */
 inode_t * traverse(char * path_name, char * f_name) {
 
@@ -145,6 +143,11 @@ inode_t * traverse(char * path_name, char * f_name) {
 
 		prev_inode = curr_inode;
 		curr_inode = inode_array_ptr + entry->inode_number;
+	}
+
+	// pathname prefix refers to a non-existent value
+	if (path_name != NULL) {
+		return &err_inode;
 	}
 
 	// if there is a file with the same name
@@ -428,8 +431,16 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			char file_name[14];
 
 			inode_t * parent_inode = traverse(path_name, file_name);
+			int create_status;
 
-			int create_status = create_reg_file(parent_inode, file_name, creat_arg.mode);
+			// pathname prefix invalid
+			if (parent_inode == &err_inode) {
+				create_status = -1;
+			}
+
+			else {
+				create_status = create_reg_file(parent_inode, file_name, creat_arg.mode);
+			}
 
 			copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &create_status, sizeof(int));
 
