@@ -124,20 +124,21 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
 	for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num++) {
 
 		/* check every entry in the block */
-		void * block_addr = (*s_indirect_ptr) + block_num * sizeof(int);
+		void * block_addr;
 
 		int entry;
 		for (entry = 0; entry < NUM_ENTRIES_PER_BLOCK; entry ++) {
 
+			if (checked_entries * sizeof(dir_entry_t) == dir_inode->size && entry == 0) {
+				* flag = 0;
+				return &err_dir_entry;
+			}
+
+			block_addr = (*s_indirect_ptr) + block_num * sizeof(int);
 			dir_entry_t * curr_entry = (dir_entry_t *) block_addr + entry;
 
-			// checked all of the entries in this directory and couldn't find file
 			if (checked_entries * sizeof(dir_entry_t) == dir_inode->size) {
 				* flag = 0;
-				// allocated blocks are full
-				if (entry == 0)
-					return &err_dir_entry;
-
 				return curr_entry;
 			}
 
@@ -150,42 +151,42 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
 		}
 	}
 
-	/* walk through double indirect block pointer */
-	void *** d_indirect_ptr = dir_inode->location[NUM_DIRECT_BLOCK_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR];
-	int i;
-	for (i = 0; i < NUM_PTR_PER_BLOCK; i ++) {
-
-		s_indirect_ptr = (* d_indirect_ptr) + i;
-
-		for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num ++) {
-
-			/* check every entry in the block */
-			void * block_addr = (*s_indirect_ptr) + block_num * sizeof(int);
-
-			int entry;
-			for (entry = 0; entry < NUM_ENTRIES_PER_BLOCK; entry ++) {
-
-				dir_entry_t * curr_entry = (dir_entry_t *) block_addr + entry;
-
-				// checked all of the entries in this directory and couldn't find file
-				if (checked_entries * sizeof(dir_entry_t) == dir_inode->size) {
-					* flag = 0;
-					// allocated blocks are full
-					if (entry == 0)
-						return &err_dir_entry;
-
-					return curr_entry;
-				}
-
-				if ( strcmp(curr_entry->fname, file_name) == 0 ) {
-					* flag = 1;
-					return curr_entry;
-				}
-
-				checked_entries ++;
-			}
-		}
-	}
+	/* walk through double indirect block pointer (directory have maximum 1023 file -> no need for double indirect ptr) */
+//	void *** d_indirect_ptr = dir_inode->location[NUM_DIRECT_BLOCK_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR];
+//	int i;
+//	for (i = 0; i < NUM_PTR_PER_BLOCK; i ++) {
+//
+//		s_indirect_ptr = (* d_indirect_ptr) + i;
+//
+//		for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num ++) {
+//
+//			/* check every entry in the block */
+//			void * block_addr = (*s_indirect_ptr) + block_num * sizeof(int);
+//
+//			int entry;
+//			for (entry = 0; entry < NUM_ENTRIES_PER_BLOCK; entry ++) {
+//
+//				dir_entry_t * curr_entry = (dir_entry_t *) block_addr + entry;
+//
+//				// checked all of the entries in this directory and couldn't find file
+//				if (checked_entries * sizeof(dir_entry_t) == dir_inode->size) {
+//					* flag = 0;
+//					// allocated blocks are full
+//					if (entry == 0)
+//						return &err_dir_entry;
+//
+//					return curr_entry;
+//				}
+//
+//				if ( strcmp(curr_entry->fname, file_name) == 0 ) {
+//					* flag = 1;
+//					return curr_entry;
+//				}
+//
+//				checked_entries ++;
+//			}
+//		}
+//	}
 
 	return &err_dir_entry;
 }
@@ -300,63 +301,63 @@ int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
 			}
 		}
 
-		/* double indirect block ptr */
+		/* double indirect block ptr (not neccessary, number of file in dir <= 1023 so doesn't need double indirect ptr) */
 		else {
+			return -1;
+		//	int double_indirect_size = parent_inode->size - NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE - NUM_PTR_PER_BLOCK * _BLOCK_SIZE;
+		//	int double_indirect_idx = NUM_DIRECT_BLOCK_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR;
 
-			int double_indirect_size = parent_inode->size - NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE - NUM_PTR_PER_BLOCK * _BLOCK_SIZE;
-			int double_indirect_idx = NUM_DIRECT_BLOCK_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR;
+		//	// need to allocate 1 double indirect block, 1 single indirect block and 1 content block
+		//	if (double_indirect_size == 0) {
 
-			// need to allocate 1 double indirect block, 1 single indirect block and 1 content block
-			if (double_indirect_size == 0) {
+		//		// need at least 3 blocks
+		//		if (sb_ptr->num_free_blocks < 3)
+		//			return -1;
 
-				// need at least 3 blocks
-				if (sb_ptr->num_free_blocks < 3)
-					return -1;
+		//		parent_inode->location[double_indirect_idx] = get_available_block();
 
-				parent_inode->location[double_indirect_idx] = get_available_block();
+		//		void *** d_indirect_ptr = parent_inode->location[double_indirect_idx];
+		//		void ** s_indirect_ptr = get_available_block();
+		//		void * content_block = get_available_block();
 
-				void *** d_indirect_ptr = parent_inode->location[double_indirect_idx];
-				void ** s_indirect_ptr = get_available_block();
-				void * content_block = get_available_block();
+		//		* d_indirect_ptr = s_indirect_ptr;
+		//		* s_indirect_ptr = content_block;
 
-				* d_indirect_ptr = s_indirect_ptr;
-				* s_indirect_ptr = content_block;
+		//		entry = (dir_entry_t *) content_block;
+		//	}
 
-				entry = (dir_entry_t *) content_block;
-			}
+		//	// need to allocate 1 single indirect block and 1 content block
+		//	else if (double_indirect_size % (NUM_PTR_PER_BLOCK * _BLOCK_SIZE) == 0) {
 
-			// need to allocate 1 single indirect block and 1 content block
-			else if (double_indirect_size % (NUM_PTR_PER_BLOCK * _BLOCK_SIZE) == 0) {
+		//		if (sb_ptr->num_free_blocks < 2)
+		//			return -1;
 
-				if (sb_ptr->num_free_blocks < 2)
-					return -1;
+		//		int next_single_indirect_block_ptr = double_indirect_size / (NUM_PTR_PER_BLOCK * _BLOCK_SIZE);
 
-				int next_single_indirect_block_ptr = double_indirect_size / (NUM_PTR_PER_BLOCK * _BLOCK_SIZE);
+		//		void ** s_indirect_ptr = get_available_block();
+		//		void * content_block = get_available_block();
 
-				void ** s_indirect_ptr = get_available_block();
-				void * content_block = get_available_block();
+		//		* ((void **) parent_inode->location[double_indirect_idx] + next_single_indirect_block_ptr) = s_indirect_ptr;
+		//		* s_indirect_ptr = content_block;
 
-				* ((void **) parent_inode->location[double_indirect_idx] + next_single_indirect_block_ptr) = s_indirect_ptr;
-				* s_indirect_ptr = content_block;
+		//		entry = (dir_entry_t *) content_block;
 
-				entry = (dir_entry_t *) content_block;
+		//	}
 
-			}
+		//	// need to allocate 1 content block
+		//	else {
 
-			// need to allocate 1 content block
-			else {
+		//		int single_indirect_block_num = double_indirect_size / (NUM_PTR_PER_BLOCK * _BLOCK_SIZE);
+		//		int next_content_block_num = ( double_indirect_size - single_indirect_block_num * NUM_PTR_PER_BLOCK * _BLOCK_SIZE ) / _BLOCK_SIZE;
 
-				int single_indirect_block_num = double_indirect_size / (NUM_PTR_PER_BLOCK * _BLOCK_SIZE);
-				int next_content_block_num = ( double_indirect_size - single_indirect_block_num * NUM_PTR_PER_BLOCK * _BLOCK_SIZE ) / _BLOCK_SIZE;
+		//		void * content_block = get_available_block();
 
-				void * content_block = get_available_block();
+		//		void ** s_indirect_ptr = * ((void ***) parent_inode->location[double_indirect_idx] + single_indirect_block_num);
+		//		* (s_indirect_ptr + next_content_block_num) = content_block;
 
-				void ** s_indirect_ptr = * ((void ***) parent_inode->location[double_indirect_idx] + single_indirect_block_num);
-				* (s_indirect_ptr + next_content_block_num) = content_block;
+		//		entry = (dir_entry_t *) content_block;
 
-				entry = (dir_entry_t *) content_block;
-
-			}
+		//	}
 		}
 
 	}
@@ -436,12 +437,42 @@ int create_dir_file( inode_t * parent_inode, char * file_name ) {
 			parent_inode->location[next_block_ptr] = get_available_block();
 			entry = (dir_entry_t *) parent_inode->location[next_block_ptr];
 		}
-		/* TODO: allocate new single/double indirect block pointer */
 
+		/* single indirect block ptr */
+		else if (parent_inode->size < (NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE + NUM_PTR_PER_BLOCK * _BLOCK_SIZE)) {
+			int single_indirect_size = parent_inode->size - NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE;
 
-		/* update superblock */
-		sb_ptr->num_free_blocks --;
+			// need to allocate a new block for single indirect block ptr and also a content block */
+			if (single_indirect_size == 0) {
 
+				// need at least 2 blocks
+				if (sb_ptr->num_free_blocks < 2)
+					return -1;
+
+				parent_inode->location[NUM_DIRECT_BLOCK_PTR] = get_available_block();
+				void * content_block = get_available_block();
+
+				// point the 1st pointer to the allocated content block
+				* (void **) parent_inode->location[NUM_DIRECT_BLOCK_PTR] = content_block;
+
+				entry = (dir_entry_t *) content_block;
+			}
+
+			// only have to allocate 1 content block inside the block pointed by single indirect block
+			else {
+				int next_block_ptr = single_indirect_size / _BLOCK_SIZE;
+				void * content_block = get_available_block();
+
+				* (void **) ((int *) parent_inode->location[NUM_DIRECT_BLOCK_PTR] + next_block_ptr) = content_block;
+
+				entry = (dir_entry_t *) content_block;
+			}
+		}
+
+		/* double indirect ptr - not neccessary */
+		else {
+			return -1;
+		}
 	}
 
 	/* create a new inode */
@@ -653,7 +684,7 @@ file_t * find_fd(int pid, int fd) {
 	file_t *proc_fdt = (file_t *) file_desc_table + proc_idx * MAX_OPEN_FILE;
 	file_t *located_file = (file_t *) proc_fdt + fd;
 
-	return located_file;	
+	return located_file;
 }
 
 /*
