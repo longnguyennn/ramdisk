@@ -41,3 +41,16 @@ typedef struct {
 	int pid;
 	int retval;
 } close_arg_t;
+
+typedef struct {
+	int fd;
+	int pid;
+	int offset;
+	int retval;
+} lseek_arg_t;
+
+typedef struct {
+	char path_name[MAX_PATHNAME_LENGTH];
+	mode_t mode;
+	int retval;
+} chmod_arg_t;

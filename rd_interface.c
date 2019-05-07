@@ -59,3 +59,30 @@ int rd_close(int input_fd) {
 
 	return arg.retval;
 }
+
+int rd_lseek(int input_fd, int offset) {
+	int fd = open("/proc/ramdisk", O_RDONLY );
+	lseek_arg_t arg;
+	arg.fd = input_fd;
+	arg.pid = getpid();
+	arg.offset = offset;
+
+	ioctl(fd, RD_LSEEK, &arg);
+
+	close(fd);
+
+	return arg.retval;
+}
+
+int rd_chmod(char *pathname, mode_t mode) {
+	int fd = open("/proc/ramdisk", O_RDONLY);
+	chmod_arg_t arg;
+	strcpy(arg.path_name, pathname);
+	arg.mode = mode;
+
+	ioctl(fd, RD_CHMOD, &arg);
+
+	close(fd);
+
+	return arg.retval;
+}

@@ -949,6 +949,52 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			break;
 		}
 
+		case RD_LSEEK: {
+			lseek_arg_t lseek_arg;
+			copy_from_user(&lseek_arg, (lseek_arg_t *) arg, sizeof(lseek_arg_t));
+
+			file_t *lseek_file = find_fd(lseek_arg.pid, lseek_arg.fd);
+
+			// return error if can't find the fd or the fd is unoccupied
+			if (lseek_file == &err_file || lseek_file->position == FILE_UNINITIALIZED) {
+				copy_to_user((int *) & ( (lseek_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+				return -1;
+			}
+
+			// Identify the index node associate with this fd
+			inode_t *lseek_inode = lseek_file->inode_ptr;
+			int file_size = lseek_inode->size;
+
+			// If offset is too large, 
+			int offset = lseek_arg.offset;
+			if (file_size > offset) {
+				offset = file_size;
+			}
+
+			copy_to_user((int *) & ( (lseek_arg_t *) arg ) -> retval, &offset, sizeof(int));			
+
+			break;
+		}
+
+		case RD_CHMOD: {
+			chmod_arg_t chmod_arg;
+			copy_from_user(&chmod_arg, (chmod_arg_t *) arg, sizeof(chmod_arg_t));
+
+			// Find the corresponding inode and check for error
+			inode_t *chmod_inode = find_inode(&chmod_arg.path_name[1]);
+			if (chmod_inode == &err_inode) {
+				copy_to_user((int *) & ( (chmod_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+				return -1;
+			}
+
+			chmod_inode->access_right = chmod_arg.mode;
+
+			int ret = 0;
+			copy_to_user((int *) & ( (chmod_arg_t *) arg ) -> retval, &ret, sizeof(int));
+			
+			break;
+		}
+
 		default:
 			return -EINVAL;
 			break;
