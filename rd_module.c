@@ -510,11 +510,12 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			copy_from_user(&mkdir_arg, (mkdir_arg_t *) arg, sizeof(mkdir_arg_t));
 			char *path_name = &mkdir_arg.path_name[1];
 			char file_name[14];
+
 			inode_t *parent_inode = traverse(path_name, file_name);
 
 			int create_status = create_dir_file(parent_inode, file_name);
 
-			copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &create_status, sizeof(int));
+			copy_to_user((int *) & ( (mkdir_arg_t *) arg ) -> retval, &create_status, sizeof(int));
 		}
 		break;
 		default:
