@@ -297,6 +297,7 @@ int create_dir_file( inode_t * parent_inode, char * file_name ) {
 
 	inode->type = DIR_T;
 	inode->size = 0;
+	inode->access_right = RW;
 
 	/* write a directory entry to the location * entry is pointing to */
 	strcpy(entry->fname, file_name);
