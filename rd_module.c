@@ -28,6 +28,7 @@ static dir_entry_t err_dir_entry;
 static int ioctl_success = 0;
 static int ioctl_error = -1;
 
+static file_t err_file;
 
 static int rd_ioctl (struct inode * inode, struct file * file,
 		unsigned int cmd, unsigned long arg);
@@ -540,6 +541,39 @@ int check_file_permission(int flag, mode_t access_right) {
 
 }
 
+/*
+ * find and return corresponding fd
+ * return NULL if not found
+*/
+file_t * find_fd(int pid, int fd) {
+	int proc_idx = -5;
+	int i = 0;
+
+	if (fd > MAX_OPEN_FILE) {
+		return &err_file;
+	}
+
+	// Search for the process
+	for (i = 0; i < MAX_NUM_PROCESS; i++) {
+		if (sb_ptr->process_table[i] == pid) {
+			proc_idx = i;
+			break;
+		}
+	}
+
+	// return NULL if the process is not found
+	if (proc_idx == -5) {
+		return &err_file;
+	}
+
+	file_t *proc_fdt = (file_t *) file_desc_table + proc_idx * MAX_OPEN_FILE;
+	file_t *closing_fd   = (file_t *) proc_fdt + fd;
+
+	return closing_fd;	
+}
+
+
+
 /* initialize memory and pointers for ramdisk
  * this func is called when user first call ioctl
  */
@@ -748,39 +782,11 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 		case RD_CLOSE: {
 			close_arg_t close_arg;
 			copy_from_user(&close_arg, (close_arg_t *) arg, sizeof(close_arg_t));
-			
-			int pid = &close_arg.pid; 
-			int fd = &close_arg.fd;
-			int proc_idx = -5;
-			int i;
 
-			// Search for the 
-			for (i = 0; i < MAX_NUM_PROCESS; i++) {
-				if (sb_ptr->process_table[i] == pid) {
-					proc_idx = i;
-					break;
-				}
-			}
+			file_t *closing_fd = find_fd(&close_arg.pid, &close_arg.fd);
 
-			// return error if the process is not found
-			if (proc_idx == -5) {
-				copy_to_user((int *) & ( (close_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
-				return -1;
-			}
-
-			// return error if fd is larger than allowed fd entries
-			if (&close_arg.fd > MAX_OPEN_FILE) {
-				copy_to_user((int *) & ( (close_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
-				return -1;
-			}
-
-			// proc_fdt is the start addr of the fdt corresponds to this process
-			// closing_fd is the fd that we are closing
-			file_t *proc_fdt = (file_t *) file_desc_table + proc_idx * MAX_OPEN_FILE;
-			file_t *closing_fd = (file_t *) proc_fdt + fd;
-
-			// return error if the fd is unoccupied
-			if (closing_fd->position == FILE_UNINITIALIZED) {
+			// return error if can't find the fd or the fd is unoccupied
+			if (closing_fd == &err_file || closing_fd->position == FILE_UNINITIALIZED) {
 				copy_to_user((int *) & ( (close_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
 				return -1;
 			}
