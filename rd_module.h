@@ -6,6 +6,9 @@
 #define NUM_INODE 1024  // 256 blocks of inode, block size = 256 bytes, inode size = 64 byte
 #define MAX_NUM_AVAILABLE_BLOCK 7931  // 2MB = 8192 * (256 byte) blocks - (superblock + inode blocks + bitmap blocks)
 #define NUM_DIRECT_BLOCK_PTR 8
+#define NUM_SINGLE_INDIRECT_BLOCK_PTR 1
+#define NUM_DOUBLE_INDIRECT_BLOCK_PTR 1
+#define NUM_PTR_PER_BLOCK 64  // 256 byte per block / 4 byte per pointer = 64
 #define NUM_ENTRIES_PER_BLOCK 16
 #define BITMAP_ARR_LENGTH 1024
 #define INODE_BITMAP_LENGTH 240

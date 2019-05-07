@@ -40,7 +40,6 @@ int rd_open(char *pathname, int flags) {
 	strcpy(arg.path_name, pathname);
 	arg.flags = flags;
 	arg.pid = getpid();
-	printf( "I'm process %d\n", arg.pid );
 	ioctl(fd, RD_OPEN, &arg);
 
 	close(fd);
