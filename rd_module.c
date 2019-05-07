@@ -58,6 +58,7 @@ static void __exit cleanup_routine (void) {
 	printk("Dumping module.\n");
 	remove_proc_entry("ramdisk", NULL);
 	vfree(memory);
+	vfree(file_desc_table);
 	return;
 }
 
@@ -80,6 +81,7 @@ void my_printk(char *string)
  * if not found, set flag = 0
  * return the pointer to the next available entry if it is within allocated block
  * return err_dir_entry otherwise
+ * ASSUMPTION: there is only 1 single indirect ptr and 1 double indirect ptr.
  */
 dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int * flag) {
 
@@ -92,18 +94,17 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
 		int entry;
 		for (entry = 0; entry < NUM_ENTRIES_PER_BLOCK; entry ++) {
 
+			dir_entry_t * curr_entry = (dir_entry_t *) dir_inode->location[block_ptr] + entry;
+
 			// checked all of the entries in this directory and couldn't find file
 			if (checked_entries * sizeof(dir_entry_t) == dir_inode->size) {
 				* flag = 0;
 				// allocated blocks are full
-				if (entry == 0) {
+				if (entry == 0)
 					return &err_dir_entry;
-				}
 
-				return (dir_entry_t *) dir_inode->location[block_ptr] + entry;
+				return curr_entry;
 			}
-
-			dir_entry_t * curr_entry = (dir_entry_t *) dir_inode->location[block_ptr] + entry;
 
 			// found an entry with name == file_name
 			if ( strcmp( curr_entry->fname, file_name ) == 0 ) {
@@ -116,7 +117,73 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
 		}
 	}
 
-	/* TODO: walk through single/double indirect block pointer... */
+	/* walk through single indirect block pointer */
+	void * s_indirect_ptr = dir_inode->location[NUM_DIRECT_PTR];
+	int block_num;
+	for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num++) {
+
+		/* check every entry in the block */
+		void * block_addr = (void *) * (s_indirect_ptr + block_num);
+
+		int entry;
+		for (entry = 0; entry < NUM_ENTRIES_PER_BLOCK; entry ++) {
+
+			dir_entry_t * curr_entry = (dir_entry_t *) block_addr + entry;
+
+			// checked all of the entries in this directory and couldn't find file
+			if (checked_entries * sizeof(dir_entry_t) == dir_inode->size) {
+				* flag = 0;
+				// allocated blocks are full
+				if (entry == 0)
+					return &err_dir_entry;
+
+				return curr_entry;
+			}
+
+			if ( strcmp(curr_entry->fname, file_name) == 0 ) {
+				* flag = 1;
+				return curr_entry;
+			}
+
+			checked_entries ++;
+		}
+	}
+
+	/* walk through double indirect block pointer */
+	void * d_indirect_ptr = dir_inode->location[NUM_DIRECT_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR];
+	int i;
+	for (i = 0; i < NUM_PTR_PER_BLOCK; i ++) {
+		s_indirect_ptr = (void *) * (d_indirect_ptr + i);
+		for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num ++) {
+
+			/* check every entry in the block */
+			void * block_addr = (void *) * (s_indirect_ptr + block_num);
+
+			int entry;
+			for (entry = 0; entry < NUM_ENTRIES_PER_BLOCK; entry ++) {
+
+				dir_entry_t * curr_entry = (dir_entry_t *) block_addr + entry;
+
+				// checked all of the entries in this directory and couldn't find file
+				if (checked_entries * sizeof(dir_entry_t) == dir_inode->size) {
+					* flag = 0;
+					// allocated blocks are full
+					if (entry == 0)
+						return &err_dir_entry;
+
+					return curr_entry;
+				}
+
+				if ( strcmp(curr_entry->fname, file_name) == 0 ) {
+					* flag = 1;
+					return curr_entry;
+				}
+
+				checked_entries ++;
+			}
+		}
+	}
+
 	return &err_dir_entry;
 }
 
