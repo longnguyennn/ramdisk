@@ -35,3 +35,9 @@ typedef struct {
 	int pid;
 	int retval;
 } open_arg_t;
+
+typedef struct {
+	int fd;
+	int pid;
+	int retval;
+} close_arg_t;
