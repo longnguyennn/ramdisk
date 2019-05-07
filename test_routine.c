@@ -23,6 +23,7 @@ int main () {
 	char *pathname1 = "/hi";
 	char *pathname2 = "/hi/fi2";
 	char *pathname3 = "/ih/fi2";
+	char *pathname4 = "/hi/close";
 
 	printf("BASIC TEST FOR MKDIR:\n");
 
@@ -102,6 +103,17 @@ int main () {
 		retval = rd_open(filepath, O_RDONLY);
 		printf("(Child): %d\n", retval);
 	}
+
+	printf("BASIC TEST FOR CLOSE:\n");
+
+	retval = rd_creat(pathname4, RW);
+	int close_fd = rd_open(pathname4, O_RDONLY); // the fd
+
+	retval = rd_close(close_fd);
+	printf("TEST 1: close a valid file: 0 == %d\n", retval);
+
+	retval = rd_close(close_fd);
+	printf("TEST 2: close a already closed file: -1 == %d\n", retval);
 
 
 	return 0;
