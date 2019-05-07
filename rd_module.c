@@ -6,15 +6,17 @@
 #include <linux/tty.h>
 #include <linux/sched.h>
 #include <linux/vmalloc.h>
+#include <linux/types.h>
 
 #include "rd_module.h"
 #include "rd.h"
 
+MODULE_LICENSE("GPL");
 
-MODULE_LICENSE("GPL"); 
+static int initialized = 0;
 
+static void * memory;
 static superblock_t * sb_ptr;  // point to superblock
-
 static inode_t * inode_array_ptr;  // point to the start of inode array
 static bitmap_t * bitmap_ptr;  // point to the start of bitmap blocks
 static void * content_block_ptr;  // point to the start of the content blocks
@@ -115,13 +117,13 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
 
 /*
  * traverse path_name to find and return the parent's inode of corresponding file.
- * path_name will be set to the corresponding file's name when func return.
+ * f_name will be set to the corresponding file's name when func return.
  * ASSUMPTION: the path must always be valid, the file may or may not be created.
  * i.e.: path=/root/work/file.c
  * 		- /root/work must already be in the filesystem.
  * 		- file.c may or may not be created
  */
-inode_t * traverse(char * path_name) {
+inode_t * traverse(char * path_name, char * f_name) {
 
 	char * file_name;
 	dir_entry_t * entry;
@@ -147,11 +149,11 @@ inode_t * traverse(char * path_name) {
 
 	// if there is a file with the same name
 	if (file_name == NULL) {
-		strcpy(path_name, entry->fname);
+		strcpy(f_name, entry->fname);
 		return prev_inode;
 	}
 
-	strcpy(path_name, file_name);
+	strcpy(f_name, file_name);
 	return curr_inode;
 
 }
@@ -162,7 +164,7 @@ inode_t * traverse(char * path_name) {
  * if there is no more content block/ inode left, return -1.
  * if create successfully, return 0.
  */
-int create_reg_file ( inode_t * parent_inode, char * file_name, char mode ) {
+int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
 
 	/* no inode available */
 	if (sb_ptr->num_free_inodes == 0)
@@ -350,6 +352,56 @@ int get_available_inode_idx(void) {
 	return idx;
 }
 
+/* initialize memory and pointers for ramdisk
+ * this func is called when user first call ioctl
+ */
+void rd_init(void) {
+
+	/* allocate memory */
+	memory = vmalloc (MEM_SIZE);
+
+	/* initialize superblock */
+	sb_ptr = (superblock_t *) memory;
+	sb_ptr->num_free_blocks = MAX_NUM_AVAILABLE_BLOCK;
+	sb_ptr->num_free_inodes = NUM_INODE;
+
+	inode_array_ptr = (inode_t *) (sb_ptr + 1);
+	bitmap_ptr = (bitmap_t *) (inode_array_ptr + NUM_INODE);
+	content_block_ptr = (void *) (bitmap_ptr + 1);
+
+	/* initialize every bit in bitmap to 0 */
+	memset((void *) bitmap_ptr, 0, sizeof(bitmap_t));
+	memset(&sb_ptr->inode_bitmap, 0, INODE_BITMAP_LENGTH);
+
+	/* initialize root dir */
+	inode_t * root_inode = inode_array_ptr;
+	root_inode->type = DIR_T;
+	root_inode->size = 0;  // currently empty
+	root_inode->location[0] = content_block_ptr;  // first content block
+	root_inode->access_right = RW;
+
+	sb_ptr->inode_bitmap[0] = 128;  // mark the first inode as used (128 = 0x1000000)
+	sb_ptr->num_free_inodes -= 1;
+
+	//bitmap_ptr->array[0] = 128;  // mark the first content block as used (128 = 0x10000000)
+	//sb_ptr->num_free_blocks -= 1;
+	//
+
+	printk("superblock_t = %d\n", sizeof(superblock_t));
+	printk("inode_t = %d\n", sizeof(inode_t));
+	printk("bitmap_ptr = %d\n", sizeof(bitmap_t));
+	printk("dir_entry_t = %d\n", sizeof(dir_entry_t));
+
+	printk("Layout addr = ... \n");
+
+	printk("0x%p\n", sb_ptr);
+	printk("0x%p\n", inode_array_ptr);
+	printk("0x%p\n", bitmap_ptr);
+	printk("0x%p\n", content_block_ptr);
+
+	return;
+}
+
 
 
 /***
@@ -358,40 +410,13 @@ int get_available_inode_idx(void) {
 static int rd_ioctl (struct inode * inode, struct file * file,
 		unsigned int cmd, unsigned long arg)
 {
+
+	if (initialized == 0) {
+		initialized ++;
+		rd_init();
+	}
+
 	switch (cmd) {
-
-		case RD_INIT: ;
-			/* allocate memory */
-			memory = vmalloc (MEM_SIZE);
-
-			/* initialize superblock */
-			sb_ptr = (superblock_t *) memory;
-			sb_ptr->num_free_blocks = MAX_NUM_AVAILABLE_BLOCK;
-			sb_ptr->num_free_inodes = NUM_INODE;
-
-			inode_array_ptr = (inode_t *) (sb_ptr + 1);
-			bitmap_ptr = (bitmap_t *) (inode_array_ptr + NUM_INODE);
-			content_block_ptr = (void *) (bitmap_ptr + 1);
-
-			/* initialize every bit in bitmap to 0 */
-			memset((void *) bitmap_ptr, 0, sizeof(bitmap_t));
-			memset(&sb_ptr->inode_bitmap, 0, INODE_BITMAP_LENGTH);
-
-			/* initialize root dir */
-			inode_t * root_inode = inode_array_ptr;
-			root_inode->type = DIR_T;
-			root_inode->size = 0;  // currently empty
-			root_inode->location[0] = content_block_ptr;  // first content block
-			root_inode->access_right = READ_WRITE;
-
-			sb_ptr->inode_bitmap[0] = 128;  // mark the first inode as used (128 = 0x1000000)
-			sb_ptr->num_free_inodes -= 1;
-
-			//bitmap_ptr->array[0] = 128;  // mark the first content block as used (128 = 0x10000000)
-			//sb_ptr->num_free_blocks -= 1;
-			//
-
-			break;
 
 		case RD_CREAT: ;
 			/* get input from user space */
@@ -400,9 +425,9 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 
 			/* find the parent dir inode of given path_name */
 			char * path_name = &creat_arg.path_name[1];  // ignore the leading '/' from path_name input
-			inode_t * parent_inode = traverse(path_name);
+			char file_name[14];
 
-			char * file_name = path_name;
+			inode_t * parent_inode = traverse(path_name, file_name);
 
 			int create_status = create_reg_file(parent_inode, file_name, creat_arg.mode);
 

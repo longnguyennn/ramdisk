@@ -1,3 +1,5 @@
+#include <linux/types.h>
+
 /* ramdisk constants */
 #define MEM_SIZE 2097152  // 2MB
 #define _BLOCK_SIZE 256
@@ -6,39 +8,41 @@
 #define NUM_DIRECT_BLOCK_PTR 8
 #define NUM_ENTRIES_PER_BLOCK 16
 #define BITMAP_ARR_LENGTH 1024
-#define INODE_BITMAP_LENGTH 240
+#define INODE_BITMAP_LENGTH 248
 
 #define DIR_T 0
 #define REG_T 1
 
-/* sizeof(superblock_t) = sizeof(unsigned long) * 2 + 240 = 256 */
+/* sizeof(superblock_t) = sizeof(unsigned long) * 2 + 248 = 256 */
 typedef struct {
 	unsigned long num_free_blocks;
 	unsigned long num_free_inodes;
 	char inode_bitmap[INODE_BITMAP_LENGTH];  // keep track of available inode
 } superblock_t;
 
-/* sizeof(inode_t) = 64 already, doesn't need to specify alignment */
+/* sizeof(inode_t) = 64 */
 typedef struct {
 	char type;
 	unsigned long size;
+	mode_t access_right;
 	void * location[10];
-	char access_right;
-} inode_t;
+}__attribute__((aligned(16))) inode_t;
 
 /* sizeof(bitmap_t) = 1024 byte = 4 * (256 byte blocks) */
 typedef struct {
 	char array[BITMAP_ARR_LENGTH];
 } bitmap_t;
 
+/* size of (dir_entry_t) = 16 */
 typedef struct {
 	char fname[14];
-	int inode_number;
+	short inode_number;
 } dir_entry_t;
 
 /* function headers */
+void rd_init(void);
 dir_entry_t * find_file_entry_in_dir(inode_t *, char *, int *);
-inode_t * traverse(char *);
-int create_reg_file(inode_t *, char *, char);
+inode_t * traverse(char *, char *);
+int create_reg_file(inode_t *, char *, mode_t);
 void * get_available_block(void);
 int get_available_inode_idx(void);

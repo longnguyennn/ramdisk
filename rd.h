@@ -1,9 +1,11 @@
-#define READ_ONLY  0
-#define WRITE_ONLY 1
-#define READ_WRITE 2
+#include <linux/types.h>
+
+// File modes
+#define RD  (S_IRUSR | S_IRGRP | S_IROTH)
+#define RW  (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
+#define WR  (S_IWUSR | S_IRGRP | S_IROTH)
 
 // ioctl operations
-#define RD_INIT   _IOR( 0, 0, int )
 #define RD_CREAT  _IOR( 0, 0, char)
 #define RD_MKDIR  _IOR( 0, 1, char)
 #define RD_OPEN   _IOR( 0, 2, char)
@@ -18,7 +20,7 @@
 
 typedef struct {
 	char path_name[MAX_PATHNAME_LENGTH];
-	char mode;
+	mode_t mode;
 	int retval;
 } creat_arg_t;
 
