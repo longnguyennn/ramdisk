@@ -29,3 +29,9 @@ typedef struct {
     int retval;
 } mkdir_arg_t;
 
+typedef struct {
+	char path_name[MAX_PATHNAME_LENGTH];
+	int flags;
+	int pid;
+	int retval;
+} open_arg_t;
