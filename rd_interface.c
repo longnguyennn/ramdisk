@@ -21,3 +21,15 @@ int rd_creat(char * pathname, mode_t mode) {
 
 	return arg.retval;
 }
+
+int rd_mkdir(char *path_name) {
+	int fd = open("/proc/ramdisk", O_RDONLY );
+	mkdir_arg_t arg;
+	strcpy(arg.path_name, path_name);
+
+	ioctl(fd, RD_MKDIR, &arg);
+
+	close(fd);
+
+	return arg.retval;
+}
