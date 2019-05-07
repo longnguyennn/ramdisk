@@ -615,10 +615,59 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 				break;
 			}
 
+			int pid = open_arg.pid;
+			int proc_idx = -5;  // init to some random value
+
+			/* find the file descriptor table for this process */
+
+			// check if this process is already in process_table
+			int i;
+			for (i = 0; i < MAX_NUM_PROCESS; i ++) {
+				if (process_table[i] == pid) {
+					proc_idx = i;
+					break;
+				}
+			}
+
+			// put this process in process_table if 1st time run
+			if (proc_idx == -5) {
+				for (i = 0; i < MAX_NUM_PROCESS; i ++) {
+					if (process_table[i] == PROC_UNINITIALIZED) {
+						process_table[i] = pid;
+						proc_idx = i;
+						break;
+					}
+				}
+			}
+
+			// proc_fdt is the start addr of the fdt corresponds to this process
+			file_t * proc_fdt = (file_t *) file_desc_table + proc_idx * MAX_OPEN_FILE;
+
 			// check if file is already open in the file descriptor table
+			for (i = 0; i < MAX_OPEN_FILE; i ++ ) {
+				file_t * file = proc_fdt + i;
+				if (file->position != FILE_UNINITIALIZED && file->inode_ptr == inode) {
+					copy_to_user((int *) & ( (open_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+					break;
+				}
+			}
+
+			// find an empty entry in file descriptor table
+			for (i = 0; i < MAX_OPEN_FILE; i ++) {
+				file_t * file = proc_fdt + i;
+
+				if (file->position == FILE_UNINITIALIZED) {
+					file->position = 0;
+					file->inode_ptr = inode;
+					copy_to_user((int *) & ( (open_arg_t *) arg ) -> retval, &i, sizeof(int));
+					break;
+				}
+			}
 
 
-			//
+			/* file descriptor table is full (this shouldn't be the case) */
+			copy_to_user((int *) & ( (open_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+
 			break;
 		}
 
