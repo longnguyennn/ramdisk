@@ -21,8 +21,12 @@ static inode_t * inode_array_ptr;  // point to the start of inode array
 static bitmap_t * bitmap_ptr;  // point to the start of bitmap blocks
 static void * content_block_ptr;  // point to the start of the content blocks
 
+static void * file_desc_table;
+
 static inode_t err_inode;
 static dir_entry_t err_dir_entry;
+static int ioctl_success = 0;
+static int ioctl_error = -1;
 
 static int rd_ioctl (struct inode * inode, struct file * file,
 		unsigned int cmd, unsigned long arg);
@@ -137,9 +141,8 @@ inode_t * traverse(char * path_name, char * f_name) {
 		entry = find_file_entry_in_dir(curr_inode, file_name, &flag);
 
 		/* there is no file with name = file_name in directory */
-		if (flag == 0) {
+		if (flag == 0)
 			break;
-		}
 
 		prev_inode = curr_inode;
 		curr_inode = inode_array_ptr + entry->inode_number;
@@ -221,6 +224,34 @@ int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
 
 	return 0;
 }
+
+/*
+ * find and return the inode corresponds with path_name
+ * if not found, return err_inode
+ */
+inode_t * find_inode(char * path_name) {
+
+	char * file_name = NULL;
+	dir_entry_t * entry;
+	inode_t * curr_inode = inode_array_ptr;
+
+	while ( (file_name = strsep(&path_name, "/")) != NULL ) {
+		int flag = 0;
+		entry = find_file_entry_in_dir(curr_inode, file_name, &flag);
+
+		if (flag == 0)
+			break;
+
+		curr_inode = inode_array_ptr + entry->inode_number;
+	}
+
+	if (file_name != NULL)
+		return &err_inode;
+
+	return curr_inode;
+
+}
+
 
 /* return the address of an available block and mark that block as used in the bitmap.
  * this func should be called after checking sb_ptr->num_free_blocks to avoid potential misbehavior.
@@ -355,6 +386,34 @@ int get_available_inode_idx(void) {
 	return idx;
 }
 
+/*
+ * return 1 if access_right allows for open flag
+ * return 0 otherwise
+ */
+int check_file_permission(int flag, mode_t access_right) {
+
+	// read-only flag
+	if (flag == 0) {
+		return ( ( access_right >> 8 ) % 2 ) == 1;
+	}
+
+	// write-only flag
+	else if (flag == 1) {
+		return ( ( access_right >> 7 ) % 2 ) == 1;
+	}
+
+	// read-write flag
+	else if (flag == 2) {
+		return ( ( ( access_right >> 8 ) % 2 ) == 1 ) && ( ( ( access_right >> 7 ) % 2 ) == 1 );
+	}
+
+	// unknown flag
+	else {
+		return 0;
+	}
+
+}
+
 /* initialize memory and pointers for ramdisk
  * this func is called when user first call ioctl
  */
@@ -367,6 +426,11 @@ void rd_init(void) {
 	sb_ptr = (superblock_t *) memory;
 	sb_ptr->num_free_blocks = MAX_NUM_AVAILABLE_BLOCK;
 	sb_ptr->num_free_inodes = NUM_INODE;
+	// set PID in process_table to -2
+	int i;
+	for (i = 0; i < MAX_NUM_PROCESS; i ++) {
+		sb_ptr->process_table[i] = PROC_UNINITIALIZED;
+	}
 
 	inode_array_ptr = (inode_t *) (sb_ptr + 1);
 	bitmap_ptr = (bitmap_t *) (inode_array_ptr + NUM_INODE);
@@ -402,6 +466,14 @@ void rd_init(void) {
 	printk("0x%p\n", bitmap_ptr);
 	printk("0x%p\n", content_block_ptr);
 
+	/* allocate memory for the file descriptor table */
+	file_desc_table = vmalloc (sizeof(file_t) * MAX_OPEN_FILE * MAX_NUM_PROCESS);
+	// initialize file_desc_table values to some constant to do availability check later
+	for (i = 0; i < MAX_OPEN_FILE * MAX_NUM_PROCESS; i ++) {
+		file_t * file = (file_t *) file_desc_table + i;
+		file->position = FILE_UNINITIALIZED;
+	}
+
 	return;
 }
 
@@ -413,6 +485,8 @@ void rd_init(void) {
 static int rd_ioctl (struct inode * inode, struct file * file,
 		unsigned int cmd, unsigned long arg)
 {
+
+	char * path_name;
 
 	if (initialized == 0) {
 		initialized ++;
@@ -427,24 +501,56 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			copy_from_user(&creat_arg, (creat_arg_t *) arg, sizeof(creat_arg_t));
 
 			/* find the parent dir inode of given path_name */
-			char * path_name = &creat_arg.path_name[1];  // ignore the leading '/' from path_name input
+			path_name = &creat_arg.path_name[1];  // ignore the leading '/' from path_name input
 			char file_name[14];
 
 			inode_t * parent_inode = traverse(path_name, file_name);
-			int create_status;
 
 			// pathname prefix invalid
 			if (parent_inode == &err_inode) {
-				create_status = -1;
+				copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+				break;
 			}
 
-			else {
-				create_status = create_reg_file(parent_inode, file_name, creat_arg.mode);
+			int create_status = create_reg_file(parent_inode, file_name, creat_arg.mode);
+
+			// create fail
+			if (create_status < 0) {
+				copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+				break;
 			}
 
-			copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &create_status, sizeof(int));
+			copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &ioctl_success, sizeof(int));
+			break;
+
+		case RD_OPEN: ;
+			/* get input from user space */
+			open_arg_t open_arg;
+			copy_from_user(&open_arg, (open_arg_t *) arg, sizeof(open_arg_t));
+
+			path_name = &open_arg.path_name[1];  // ignore leading '/' from path_name input
+			inode_t * inode = find_inode(path_name);
+
+			// cannot find inode with given pathname
+			if (inode == &err_inode) {
+				copy_to_user((int *) & ( (open_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+				break;
+			}
+
+			// check file permission vs. flags
+			int permission = check_file_permission(open_arg.flags, inode->access_right);
+			if (!permission) {
+				copy_to_user((int *) & ( (open_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+				break;
+			}
+
+			// check if file is already open in the file descriptor table
+
+
+			//
 
 			break;
+
 
 		default:
 			return -EINVAL;
