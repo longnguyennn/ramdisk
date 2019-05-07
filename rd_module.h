@@ -40,6 +40,7 @@ typedef struct {
 } dir_entry_t;
 
 /* function headers */
+void rd_init(void);
 dir_entry_t * find_file_entry_in_dir(inode_t *, char *, int *);
 inode_t * traverse(char *, char *);
 int create_reg_file(inode_t *, char *, mode_t);

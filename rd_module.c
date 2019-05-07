@@ -11,7 +11,9 @@
 #include "rd_module.h"
 #include "rd.h"
 
-MODULE_LICENSE("GPL"); 
+MODULE_LICENSE("GPL");
+
+static int initialized = 0;
 
 static void * memory;
 static superblock_t * sb_ptr;  // point to superblock
@@ -350,6 +352,56 @@ int get_available_inode_idx(void) {
 	return idx;
 }
 
+/* initialize memory and pointers for ramdisk
+ * this func is called when user first call ioctl
+ */
+void rd_init(void) {
+
+	/* allocate memory */
+	memory = vmalloc (MEM_SIZE);
+
+	/* initialize superblock */
+	sb_ptr = (superblock_t *) memory;
+	sb_ptr->num_free_blocks = MAX_NUM_AVAILABLE_BLOCK;
+	sb_ptr->num_free_inodes = NUM_INODE;
+
+	inode_array_ptr = (inode_t *) (sb_ptr + 1);
+	bitmap_ptr = (bitmap_t *) (inode_array_ptr + NUM_INODE);
+	content_block_ptr = (void *) (bitmap_ptr + 1);
+
+	/* initialize every bit in bitmap to 0 */
+	memset((void *) bitmap_ptr, 0, sizeof(bitmap_t));
+	memset(&sb_ptr->inode_bitmap, 0, INODE_BITMAP_LENGTH);
+
+	/* initialize root dir */
+	inode_t * root_inode = inode_array_ptr;
+	root_inode->type = DIR_T;
+	root_inode->size = 0;  // currently empty
+	root_inode->location[0] = content_block_ptr;  // first content block
+	root_inode->access_right = RW;
+
+	sb_ptr->inode_bitmap[0] = 128;  // mark the first inode as used (128 = 0x1000000)
+	sb_ptr->num_free_inodes -= 1;
+
+	//bitmap_ptr->array[0] = 128;  // mark the first content block as used (128 = 0x10000000)
+	//sb_ptr->num_free_blocks -= 1;
+	//
+
+	printk("superblock_t = %d\n", sizeof(superblock_t));
+	printk("inode_t = %d\n", sizeof(inode_t));
+	printk("bitmap_ptr = %d\n", sizeof(bitmap_t));
+	printk("dir_entry_t = %d\n", sizeof(dir_entry_t));
+
+	printk("Layout addr = ... \n");
+
+	printk("0x%p\n", sb_ptr);
+	printk("0x%p\n", inode_array_ptr);
+	printk("0x%p\n", bitmap_ptr);
+	printk("0x%p\n", content_block_ptr);
+
+	return;
+}
+
 
 
 /***
@@ -358,52 +410,13 @@ int get_available_inode_idx(void) {
 static int rd_ioctl (struct inode * inode, struct file * file,
 		unsigned int cmd, unsigned long arg)
 {
+
+	if (initialized == 0) {
+		initialized ++;
+		rd_init();
+	}
+
 	switch (cmd) {
-
-		case RD_INIT: ;
-			/* allocate memory */
-			memory = vmalloc (MEM_SIZE);
-
-			/* initialize superblock */
-			sb_ptr = (superblock_t *) memory;
-			sb_ptr->num_free_blocks = MAX_NUM_AVAILABLE_BLOCK;
-			sb_ptr->num_free_inodes = NUM_INODE;
-
-			inode_array_ptr = (inode_t *) (sb_ptr + 1);
-			bitmap_ptr = (bitmap_t *) (inode_array_ptr + NUM_INODE);
-			content_block_ptr = (void *) (bitmap_ptr + 1);
-
-			/* initialize every bit in bitmap to 0 */
-			memset((void *) bitmap_ptr, 0, sizeof(bitmap_t));
-			memset(&sb_ptr->inode_bitmap, 0, INODE_BITMAP_LENGTH);
-
-			/* initialize root dir */
-			inode_t * root_inode = inode_array_ptr;
-			root_inode->type = DIR_T;
-			root_inode->size = 0;  // currently empty
-			root_inode->location[0] = content_block_ptr;  // first content block
-			root_inode->access_right = RW;
-
-			sb_ptr->inode_bitmap[0] = 128;  // mark the first inode as used (128 = 0x1000000)
-			sb_ptr->num_free_inodes -= 1;
-
-			//bitmap_ptr->array[0] = 128;  // mark the first content block as used (128 = 0x10000000)
-			//sb_ptr->num_free_blocks -= 1;
-			//
-
-			printk("superblock_t = %d\n", sizeof(superblock_t));
-			printk("inode_t = %d\n", sizeof(inode_t));
-			printk("bitmap_ptr = %d\n", sizeof(bitmap_t));
-			printk("dir_entry_t = %d\n", sizeof(dir_entry_t));
-
-			printk("Layout addr = ... \n");
-
-			printk("0x%p\n", sb_ptr);
-			printk("0x%p\n", inode_array_ptr);
-			printk("0x%p\n", bitmap_ptr);
-			printk("0x%p\n", content_block_ptr);
-
-			break;
 
 		case RD_CREAT: ;
 			/* get input from user space */

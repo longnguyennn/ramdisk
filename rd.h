@@ -6,7 +6,6 @@
 #define WR  (S_IWUSR | S_IRGRP | S_IROTH)
 
 // ioctl operations
-#define RD_INIT   _IOR( 0, 0, int )
 #define RD_CREAT  _IOR( 0, 0, char)
 #define RD_MKDIR  _IOR( 0, 1, char)
 #define RD_OPEN   _IOR( 0, 2, char)
