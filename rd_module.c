@@ -118,12 +118,12 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
 	}
 
 	/* walk through single indirect block pointer */
-	void * s_indirect_ptr = dir_inode->location[NUM_DIRECT_PTR];
+	void ** s_indirect_ptr = dir_inode->location[NUM_DIRECT_BLOCK_PTR];
 	int block_num;
 	for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num++) {
 
 		/* check every entry in the block */
-		void * block_addr = (void *) * (s_indirect_ptr + block_num);
+		void * block_addr = (*s_indirect_ptr) + block_num * sizeof(int);
 
 		int entry;
 		for (entry = 0; entry < NUM_ENTRIES_PER_BLOCK; entry ++) {
@@ -150,14 +150,14 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
 	}
 
 	/* walk through double indirect block pointer */
-	void * d_indirect_ptr = dir_inode->location[NUM_DIRECT_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR];
+	void *** d_indirect_ptr = dir_inode->location[NUM_DIRECT_BLOCK_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR];
 	int i;
 	for (i = 0; i < NUM_PTR_PER_BLOCK; i ++) {
-		s_indirect_ptr = (void *) * (d_indirect_ptr + i);
+		s_indirect_ptr = (*d_indirect_ptr) + i;
 		for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num ++) {
 
 			/* check every entry in the block */
-			void * block_addr = (void *) * (s_indirect_ptr + block_num);
+			void * block_addr = (*s_indirect_ptr) + block_num * sizeof(int);
 
 			int entry;
 			for (entry = 0; entry < NUM_ENTRIES_PER_BLOCK; entry ++) {
