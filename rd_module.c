@@ -222,6 +222,64 @@ int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
 	return 0;
 }
 
+/*
+ * create a dir file with name = file_name.
+ * if there is a file with the same name, return -1.
+ * if there is no more content block/ inode left, return -1.
+ * if create successfully, return 0.
+ */
+int create_dir_file( inode_t * parent_inode, char * file_name ) {
+	if (sb_ptr->num_free_inodes == 0)
+		return -1;
+	
+	int flag = 0;
+	dir_entry_t * entry = find_file_entry_in_dir(parent_inode, file_name, &flag);
+
+	/* file with the same name already exist. */
+	if (flag == 1)
+		return -1;
+
+	/* blocks allocated for parent directory are full -> allocate new block to store new entry */
+	if (entry == &err_dir_entry) {
+
+		/* there is no block available */
+		if (sb_ptr->num_free_blocks == 0)
+		   return -1;
+
+		/* allocate new direct block pointer */
+		if (parent_inode->size < NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE) {
+			int next_block_ptr = parent_inode->size / _BLOCK_SIZE;
+			parent_inode->location[next_block_ptr] = get_available_block();
+			entry = (dir_entry_t *) parent_inode->location[next_block_ptr];
+		}
+		/* TODO: allocate new single/double indirect block pointer */
+
+
+		/* update superblock */
+		sb_ptr->num_free_blocks --;
+
+	}
+
+	/* create a new inode */
+	int inode_idx = get_available_inode_idx();
+	inode_t * inode = inode_array_ptr + inode_idx;
+
+	inode->type = DIR_T;
+	inode->size = 0;
+
+	/* write a directory entry to the location * entry is pointing to */
+	strcpy(entry->fname, file_name);
+	entry->inode_number = inode_idx;
+
+	/* update parent inode */
+	parent_inode->size += sizeof(dir_entry_t);
+
+	/* update superblock */
+	sb_ptr->num_free_inodes --;
+
+	return 0;
+}
+
 /* return the address of an available block and mark that block as used in the bitmap.
  * this func should be called after checking sb_ptr->num_free_blocks to avoid potential misbehavior.
  */
@@ -421,13 +479,14 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 
 	switch (cmd) {
 
-		case RD_CREAT: ;
+		case RD_CREAT: {
+
 			/* get input from user space */
 			creat_arg_t creat_arg;
 			copy_from_user(&creat_arg, (creat_arg_t *) arg, sizeof(creat_arg_t));
 
 			/* find the parent dir inode of given path_name */
-			char * path_name = &creat_arg.path_name[1];  // ignore the leading '/' from path_name input
+			char *path_name = &creat_arg.path_name[1];  // ignore the leading '/' from path_name input
 			char file_name[14];
 
 			inode_t * parent_inode = traverse(path_name, file_name);
@@ -443,9 +502,22 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			}
 
 			copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &create_status, sizeof(int));
+		}
+		break;
 
-			break;
+		case RD_MKDIR: {
+			mkdir_arg_t mkdir_arg;
+			copy_from_user(&mkdir_arg, (mkdir_arg_t *) arg, sizeof(mkdir_arg_t));
+			char *path_name = &mkdir_arg.path_name[1];
+			char file_name[14];
 
+			inode_t *parent_inode = traverse(path_name, file_name);
+
+			int create_status = create_dir_file(parent_inode, file_name);
+
+			copy_to_user((int *) & ( (mkdir_arg_t *) arg ) -> retval, &create_status, sizeof(int));
+		}
+		break;
 		default:
 			return -EINVAL;
 			break;
