@@ -587,7 +587,12 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			copy_from_user(&mkdir_arg, (mkdir_arg_t *) arg, sizeof(mkdir_arg_t));
 			char *path_name = &mkdir_arg.path_name[1];
 			char file_name[14];
+
 			inode_t *parent_inode = traverse(path_name, file_name);
+			if (parent_inode == &err_inode) {
+				copy_to_user((int *) & ( (mkdir_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+				break;
+			}
 
 			int create_status = create_dir_file(parent_inode, file_name);
 
