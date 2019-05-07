@@ -58,6 +58,7 @@ static void __exit cleanup_routine (void) {
 	printk("Dumping module.\n");
 	remove_proc_entry("ramdisk", NULL);
 	vfree(memory);
+	vfree(file_desc_table);
 	return;
 }
 
