@@ -226,7 +226,6 @@ int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
 }
 
 /*
-<<<<<<< HEAD
  * find and return the inode corresponds with path_name
  * if not found, return err_inode
  */
@@ -253,7 +252,7 @@ inode_t * find_inode(char * path_name) {
 
 }
 
-=======
+/*
  * create a dir file with name = file_name.
  * if there is a file with the same name, return -1.
  * if there is no more content block/ inode left, return -1.
@@ -310,7 +309,6 @@ int create_dir_file( inode_t * parent_inode, char * file_name ) {
 
 	return 0;
 }
->>>>>>> 6cbb50d2d9970df84b822e9fd00581d558b11234
 
 /* return the address of an available block and mark that block as used in the bitmap.
  * this func should be called after checking sb_ptr->num_free_blocks to avoid potential misbehavior.
