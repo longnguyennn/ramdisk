@@ -542,8 +542,8 @@ int check_file_permission(int flag, mode_t access_right) {
 }
 
 /*
- * find and return corresponding fd
- * return NULL if not found
+ * find and return corresponding file_t
+ * return err_file if not found
 */
 file_t * find_fd(int pid, int fd) {
 	int proc_idx = -5;
@@ -567,12 +567,42 @@ file_t * find_fd(int pid, int fd) {
 	}
 
 	file_t *proc_fdt = (file_t *) file_desc_table + proc_idx * MAX_OPEN_FILE;
-	file_t *closing_fd   = (file_t *) proc_fdt + fd;
+	file_t *located_file = (file_t *) proc_fdt + fd;
 
-	return closing_fd;	
+	return located_file;	
 }
 
+/*
+ * check process if it still has any active fd
+ * otherwise, clear it up for other processes
+*/
+void check_and_clear_process(int pid) {
+	int proc_idx = -5;
+	int i;
 
+	// Search for the process
+	for (i = 0; i < MAX_NUM_PROCESS; i++) {
+		if (sb_ptr->process_table[i] == pid) {
+			proc_idx = i;
+			break;
+		}
+	}
+
+	// Don't do anything if couldn't find it
+	if (proc_idx == -5) {
+		return;
+	}
+
+	file_t * proc_fdt = (file_t *) file_desc_table + proc_idx * MAX_OPEN_FILE;
+	for (i = 0; i < MAX_OPEN_FILE; i++) {
+		file_t * file = proc_fdt + i;
+		if (file->position != FILE_UNINITIALIZED) {
+			return;
+		}
+	}
+
+	sb_ptr->process_table[proc_idx] = PROC_UNINITIALIZED;
+}
 
 /* initialize memory and pointers for ramdisk
  * this func is called when user first call ioctl
@@ -783,7 +813,7 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			close_arg_t close_arg;
 			copy_from_user(&close_arg, (close_arg_t *) arg, sizeof(close_arg_t));
 
-			file_t *closing_fd = find_fd(&close_arg.pid, &close_arg.fd);
+			file_t *closing_fd = find_fd(close_arg.pid, close_arg.fd);
 
 			// return error if can't find the fd or the fd is unoccupied
 			if (closing_fd == &err_file || closing_fd->position == FILE_UNINITIALIZED) {
@@ -795,7 +825,11 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			closing_fd->position = FILE_UNINITIALIZED;
 			closing_fd->inode_ptr = NULL;
 
-			copy_to_user((int *) & ( (close_arg_t *) arg ) -> retval, 0, sizeof(int));
+			// remove process if no fd left
+			check_and_clear_process(close_arg.pid);
+
+			int i = 0;
+			copy_to_user((int *) & ( (close_arg_t *) arg ) -> retval, &i, sizeof(int));
 
 			break;
 		}

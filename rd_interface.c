@@ -46,3 +46,16 @@ int rd_open(char *pathname, int flags) {
 
 	return arg.retval;
 }
+
+int rd_close(int input_fd) {
+	int fd = open("/proc/ramdisk", O_RDONLY );
+	close_arg_t arg;
+	arg.fd = input_fd;
+	arg.pid = getpid();
+
+	ioctl(fd, RD_CLOSE, &arg);
+	
+	close(fd);
+
+	return arg.retval;
+}
