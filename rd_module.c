@@ -228,7 +228,7 @@ void * get_available_block(void) {
 	int curr_block = 0;  // index into content block array
 	int i;
 	for (i = 0; i < BITMAP_ARR_LENGTH; i ++) {
-		char byte = bitmap_ptr->array[i];
+		unsigned char byte = bitmap_ptr->array[i];
 
 		/* first bit is not set */
 		if (byte < 128) {
@@ -295,7 +295,7 @@ int get_available_inode_idx(void) {
 	int idx = 0;
 	int i;
 	for (i = 0; i < INODE_BITMAP_LENGTH; i ++ ) {
-		char byte = sb_ptr->inode_bitmap[i];
+		unsigned char byte = sb_ptr->inode_bitmap[i];
 
 		/* first bit is not set */
 		if (byte < 128) {
