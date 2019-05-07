@@ -118,12 +118,12 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
 	}
 
 	/* walk through single indirect block pointer */
-	void * s_indirect_ptr = dir_inode->location[NUM_DIRECT_PTR];
+	void ** s_indirect_ptr = dir_inode->location[NUM_DIRECT_BLOCK_PTR];
 	int block_num;
 	for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num++) {
 
 		/* check every entry in the block */
-		void * block_addr = (void *) * (s_indirect_ptr + block_num);
+		void * block_addr = (*s_indirect_ptr) + block_num * sizeof(int);
 
 		int entry;
 		for (entry = 0; entry < NUM_ENTRIES_PER_BLOCK; entry ++) {
@@ -150,14 +150,14 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
 	}
 
 	/* walk through double indirect block pointer */
-	void * d_indirect_ptr = dir_inode->location[NUM_DIRECT_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR];
+	void *** d_indirect_ptr = dir_inode->location[NUM_DIRECT_BLOCK_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR];
 	int i;
 	for (i = 0; i < NUM_PTR_PER_BLOCK; i ++) {
-		s_indirect_ptr = (void *) * (d_indirect_ptr + i);
+		s_indirect_ptr = (* d_indirect_ptr) + i;
 		for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num ++) {
 
 			/* check every entry in the block */
-			void * block_addr = (void *) * (s_indirect_ptr + block_num);
+			void * block_addr = (*s_indirect_ptr) + block_num * sizeof(int);
 
 			int entry;
 			for (entry = 0; entry < NUM_ENTRIES_PER_BLOCK; entry ++) {
@@ -264,11 +264,97 @@ int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
 			parent_inode->location[next_block_ptr] = get_available_block();
 			entry = (dir_entry_t *) parent_inode->location[next_block_ptr];
 		}
-		/* TODO: allocate new single/double indirect block pointer */
 
+		/* single indirect block ptr */
+		else if (parent_inode->size < (NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE + NUM_PTR_PER_BLOCK * _BLOCK_SIZE)) {
 
-		/* update superblock */
-		sb_ptr->num_free_blocks --;
+			int single_indirect_size = parent_inode->size - NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE;
+
+			// need to allocate a new block for single indirect block ptr and also a content block */
+			if (single_indirect_size == 0) {
+
+				// need at least 2 blocks
+				if (sb_ptr->num_free_blocks < 2)
+					return -1;
+
+				parent_inode->location[NUM_DIRECT_BLOCK_PTR] = get_available_block();
+				void * content_block = get_available_block();
+
+				// point the 1st pointer to the allocated content block
+				* (void **) parent_inode->location[NUM_DIRECT_BLOCK_PTR] = content_block;
+
+				entry = (dir_entry_t *) content_block;
+			}
+
+			// only have to allocate 1 content block inside the block pointed by single indirect block
+			else {
+				int next_block_ptr = single_indirect_size / _BLOCK_SIZE;
+				void * content_block = get_available_block();
+
+				* (void **) ((int *) parent_inode->location[NUM_DIRECT_BLOCK_PTR] + next_block_ptr) = content_block;
+
+				entry = (dir_entry_t *) content_block;
+			}
+		}
+
+		/* double indirect block ptr */
+		else {
+
+			int double_indirect_size = parent_inode->size - NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE - NUM_PTR_PER_BLOCK * _BLOCK_SIZE;
+			int double_indirect_idx = NUM_DIRECT_BLOCK_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR;
+
+			// need to allocate 1 double indirect block, 1 single indirect block and 1 content block
+			if (double_indirect_size == 0) {
+
+				// need at least 3 blocks
+				if (sb_ptr->num_free_blocks < 3)
+					return -1;
+
+				parent_inode->location[double_indirect_idx] = get_available_block();
+
+				void *** d_indirect_ptr = parent_inode->location[double_indirect_idx];
+				void ** s_indirect_ptr = get_available_block();
+				void * content_block = get_available_block();
+
+				* d_indirect_ptr = s_indirect_ptr;
+				* s_indirect_ptr = content_block;
+
+				entry = (dir_entry_t *) content_block;
+			}
+
+			// need to allocate 1 single indirect block and 1 content block
+			else if (double_indirect_size % (NUM_PTR_PER_BLOCK * _BLOCK_SIZE) == 0) {
+
+				if (sb_ptr->num_free_blocks < 2)
+					return -1;
+
+				int next_single_indirect_block_ptr = double_indirect_size / (NUM_PTR_PER_BLOCK * _BLOCK_SIZE);
+
+				void ** s_indirect_ptr = get_available_block();
+				void * content_block = get_available_block();
+
+				* ((void **) parent_inode->location[double_indirect_idx] + next_single_indirect_block_ptr) = s_indirect_ptr;
+				* s_indirect_ptr = content_block;
+
+				entry = (dir_entry_t *) content_block;
+
+			}
+
+			// need to allocate 1 content block
+			else {
+
+				int single_indirect_block_num = double_indirect_size / (NUM_PTR_PER_BLOCK * _BLOCK_SIZE);
+				int next_content_block_num = ( double_indirect_size - single_indirect_block_num * NUM_PTR_PER_BLOCK * _BLOCK_SIZE ) / _BLOCK_SIZE;
+
+				void * content_block = get_available_block();
+
+				void ** s_indirect_ptr = * ((void ***) parent_inode->location[double_indirect_idx] + single_indirect_block_num);
+				* (s_indirect_ptr + next_content_block_num) = content_block;
+
+				entry = (dir_entry_t *) content_block;
+
+			}
+		}
 
 	}
 
@@ -286,9 +372,6 @@ int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
 
 	/* update parent inode */
 	parent_inode->size += sizeof(dir_entry_t);
-
-	/* update superblock */
-	sb_ptr->num_free_inodes --;
 
 	return 0;
 }
@@ -329,7 +412,7 @@ inode_t * find_inode(char * path_name) {
 int create_dir_file( inode_t * parent_inode, char * file_name ) {
 	if (sb_ptr->num_free_inodes == 0)
 		return -1;
-	
+
 	int flag = 0;
 	dir_entry_t * entry = find_file_entry_in_dir(parent_inode, file_name, &flag);
 
@@ -372,9 +455,6 @@ int create_dir_file( inode_t * parent_inode, char * file_name ) {
 
 	/* update parent inode */
 	parent_inode->size += sizeof(dir_entry_t);
-
-	/* update superblock */
-	sb_ptr->num_free_inodes --;
 
 	return 0;
 }
@@ -443,6 +523,7 @@ void * get_available_block(void) {
 
 	}
 
+	sb_ptr->num_free_blocks --;
 	return (superblock_t *) content_block_ptr + curr_block;  // start of the content block addr + block_size * curr_block
 }
 
@@ -509,6 +590,7 @@ int get_available_inode_idx(void) {
 		idx ++;
 	}
 
+	sb_ptr->num_free_inodes --;
 	return idx;
 }
 
