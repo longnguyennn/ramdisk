@@ -62,3 +62,8 @@ void * get_available_block(void);
 int get_available_inode_idx(void);
 inode_t * find_inode(char * path_name);
 int check_file_permission(int, mode_t);
+int read (inode_t *, file_t *, char *, int);
+void * find_next_block(inode_t *, int);
+void * find_addr_at_offset(inode_t *, int);
+int write(inode_t *, file_t *, char *, int);
+void * allocate_new_block(inode_t *);
