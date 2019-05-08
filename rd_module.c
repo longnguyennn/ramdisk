@@ -25,6 +25,7 @@ static void * file_desc_table;
 
 static inode_t err_inode;
 static dir_entry_t err_dir_entry;
+static dir_entry_t err_block;
 static int ioctl_success = 0;
 static int ioctl_error = -1;
 
@@ -258,52 +259,57 @@ int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
 	/* blocks allocated for parent directory are full -> allocate new block to store new entry */
 	if (entry == &err_dir_entry) {
 
-		/* there is no block available */
-		if (sb_ptr->num_free_blocks == 0)
-		   return -1;
+		entry = (dir_entry_t *) allocate_new_block(parent_inode);
 
-		/* allocate new direct block pointer */
-		if (parent_inode->size < NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE) {
-			int next_block_ptr = parent_inode->size / _BLOCK_SIZE;
-			parent_inode->location[next_block_ptr] = get_available_block();
-			entry = (dir_entry_t *) parent_inode->location[next_block_ptr];
-		}
-
-		/* single indirect block ptr */
-		else if (parent_inode->size < (NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE + NUM_PTR_PER_BLOCK * _BLOCK_SIZE)) {
-
-			int single_indirect_size = parent_inode->size - NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE;
-
-			// need to allocate a new block for single indirect block ptr and also a content block */
-			if (single_indirect_size == 0) {
-
-				// need at least 2 blocks
-				if (sb_ptr->num_free_blocks < 2)
-					return -1;
-
-				parent_inode->location[NUM_DIRECT_BLOCK_PTR] = get_available_block();
-				void * content_block = get_available_block();
-
-				// point the 1st pointer to the allocated content block
-				* (void **) parent_inode->location[NUM_DIRECT_BLOCK_PTR] = content_block;
-
-				entry = (dir_entry_t *) content_block;
-			}
-
-			// only have to allocate 1 content block inside the block pointed by single indirect block
-			else {
-				int next_block_ptr = single_indirect_size / _BLOCK_SIZE;
-				void * content_block = get_available_block();
-
-				* (void **) ((int *) parent_inode->location[NUM_DIRECT_BLOCK_PTR] + next_block_ptr) = content_block;
-
-				entry = (dir_entry_t *) content_block;
-			}
-		}
-
-		/* double indirect block ptr (not neccessary, number of file in dir <= 1023 so doesn't need double indirect ptr) */
-		else {
+		if (entry == &err_block)
 			return -1;
+
+		/* there is no block available */
+		//if (sb_ptr->num_free_blocks == 0)
+		//   return -1;
+
+		///* allocate new direct block pointer */
+		//if (parent_inode->size < NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE) {
+		//	int next_block_ptr = parent_inode->size / _BLOCK_SIZE;
+		//	parent_inode->location[next_block_ptr] = get_available_block();
+		//	entry = (dir_entry_t *) parent_inode->location[next_block_ptr];
+		//}
+
+		///* single indirect block ptr */
+		//else if (parent_inode->size < (NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE + NUM_PTR_PER_BLOCK * _BLOCK_SIZE)) {
+
+		//	int single_indirect_size = parent_inode->size - NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE;
+
+		//	// need to allocate a new block for single indirect block ptr and also a content block */
+		//	if (single_indirect_size == 0) {
+
+		//		// need at least 2 blocks
+		//		if (sb_ptr->num_free_blocks < 2)
+		//			return -1;
+
+		//		parent_inode->location[NUM_DIRECT_BLOCK_PTR] = get_available_block();
+		//		void * content_block = get_available_block();
+
+		//		// point the 1st pointer to the allocated content block
+		//		* (void **) parent_inode->location[NUM_DIRECT_BLOCK_PTR] = content_block;
+
+		//		entry = (dir_entry_t *) content_block;
+		//	}
+
+		//	// only have to allocate 1 content block inside the block pointed by single indirect block
+		//	else {
+		//		int next_block_ptr = single_indirect_size / _BLOCK_SIZE;
+		//		void * content_block = get_available_block();
+
+		//		* (void **) ((int *) parent_inode->location[NUM_DIRECT_BLOCK_PTR] + next_block_ptr) = content_block;
+
+		//		entry = (dir_entry_t *) content_block;
+		//	}
+		//}
+
+		///* double indirect block ptr (not neccessary, number of file in dir <= 1023 so doesn't need double indirect ptr) */
+		//else {
+		//	return -1;
 		//	int double_indirect_size = parent_inode->size - NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE - NUM_PTR_PER_BLOCK * _BLOCK_SIZE;
 		//	int double_indirect_idx = NUM_DIRECT_BLOCK_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR;
 
@@ -358,7 +364,7 @@ int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
 		//		entry = (dir_entry_t *) content_block;
 
 		//	}
-		}
+		//}
 
 	}
 
@@ -427,52 +433,57 @@ int create_dir_file( inode_t * parent_inode, char * file_name ) {
 	/* blocks allocated for parent directory are full -> allocate new block to store new entry */
 	if (entry == &err_dir_entry) {
 
-		/* there is no block available */
-		if (sb_ptr->num_free_blocks == 0)
-		   return -1;
+		entry = (dir_entry_t *) allocate_new_block(parent_inode);
 
-		/* allocate new direct block pointer */
-		if (parent_inode->size < NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE) {
-			int next_block_ptr = parent_inode->size / _BLOCK_SIZE;
-			parent_inode->location[next_block_ptr] = get_available_block();
-			entry = (dir_entry_t *) parent_inode->location[next_block_ptr];
-		}
-
-		/* single indirect block ptr */
-		else if (parent_inode->size < (NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE + NUM_PTR_PER_BLOCK * _BLOCK_SIZE)) {
-			int single_indirect_size = parent_inode->size - NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE;
-
-			// need to allocate a new block for single indirect block ptr and also a content block */
-			if (single_indirect_size == 0) {
-
-				// need at least 2 blocks
-				if (sb_ptr->num_free_blocks < 2)
-					return -1;
-
-				parent_inode->location[NUM_DIRECT_BLOCK_PTR] = get_available_block();
-				void * content_block = get_available_block();
-
-				// point the 1st pointer to the allocated content block
-				* (void **) parent_inode->location[NUM_DIRECT_BLOCK_PTR] = content_block;
-
-				entry = (dir_entry_t *) content_block;
-			}
-
-			// only have to allocate 1 content block inside the block pointed by single indirect block
-			else {
-				int next_block_ptr = single_indirect_size / _BLOCK_SIZE;
-				void * content_block = get_available_block();
-
-				* (void **) ((int *) parent_inode->location[NUM_DIRECT_BLOCK_PTR] + next_block_ptr) = content_block;
-
-				entry = (dir_entry_t *) content_block;
-			}
-		}
-
-		/* double indirect ptr - not neccessary */
-		else {
+		if (entry == &err_block)
 			return -1;
-		}
+
+		///* there is no block available */
+		//if (sb_ptr->num_free_blocks == 0)
+		//   return -1;
+
+		///* allocate new direct block pointer */
+		//if (parent_inode->size < NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE) {
+		//	int next_block_ptr = parent_inode->size / _BLOCK_SIZE;
+		//	parent_inode->location[next_block_ptr] = get_available_block();
+		//	entry = (dir_entry_t *) parent_inode->location[next_block_ptr];
+		//}
+
+		///* single indirect block ptr */
+		//else if (parent_inode->size < (NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE + NUM_PTR_PER_BLOCK * _BLOCK_SIZE)) {
+		//	int single_indirect_size = parent_inode->size - NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE;
+
+		//	// need to allocate a new block for single indirect block ptr and also a content block */
+		//	if (single_indirect_size == 0) {
+
+		//		// need at least 2 blocks
+		//		if (sb_ptr->num_free_blocks < 2)
+		//			return -1;
+
+		//		parent_inode->location[NUM_DIRECT_BLOCK_PTR] = get_available_block();
+		//		void * content_block = get_available_block();
+
+		//		// point the 1st pointer to the allocated content block
+		//		* (void **) parent_inode->location[NUM_DIRECT_BLOCK_PTR] = content_block;
+
+		//		entry = (dir_entry_t *) content_block;
+		//	}
+
+		//	// only have to allocate 1 content block inside the block pointed by single indirect block
+		//	else {
+		//		int next_block_ptr = single_indirect_size / _BLOCK_SIZE;
+		//		void * content_block = get_available_block();
+
+		//		* (void **) ((int *) parent_inode->location[NUM_DIRECT_BLOCK_PTR] + next_block_ptr) = content_block;
+
+		//		entry = (dir_entry_t *) content_block;
+		//	}
+		//}
+
+		///* double indirect ptr - not neccessary */
+		//else {
+		//	return -1;
+		//}
 	}
 
 	/* create a new inode */
@@ -766,6 +777,60 @@ void * find_addr_at_offset(inode_t * inode, int offset) {
 }
 
 /*
+ * allocate a new block for the file corresponds with given inode
+ * if fail, return err_block
+ */
+void * allocate_new_block(inode_t * inode) {
+
+	if (sb_ptr->num_free_blocks == 0)
+		return &err_block;
+
+	int size = inode->size;
+
+	/* allocate new direct block ptr */
+	if (size < NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE) {
+		int next_block_ptr = size / _BLOCK_SIZE;
+		inode->location[next_block_ptr] = get_available_block();
+		return inode->location[next_block_ptr];
+	}
+
+	/* allocate single indirect block ptr */
+	else if (size < (NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE + NUM_PTR_PER_BLOCK * _BLOCK_SIZE)) {
+
+		int single_indirect_size = size - NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE;
+
+		// allocate a new block for single indirect block ptr and a content block */
+		if (single_indirect_size == 0) {
+
+			if (sb_ptr->num_free_blocks < 2)
+				return &err_block;
+
+			inode->location[NUM_DIRECT_BLOCK_PTR] = get_available_block();
+			void * content_block = get_available_block();
+
+			// point the 1st pointer to the allocated content block
+			* (void **) inode->location[NUM_DIRECT_BLOCK_PTR] = content_block;
+			return content_block;
+
+		}
+
+		// allocate 1 content block
+		else {
+			int next_block_ptr = single_indirect_size / _BLOCK_SIZE;
+			void * content_block = get_available_block();
+
+			* (void **) ((int *) inode->location[NUM_DIRECT_BLOCK_PTR] + next_block_ptr) = content_block;
+			return content_block;
+		}
+	}
+
+	/* allocate double indirect block ptr */
+	else {
+		return &err_block;
+	}
+}
+
+/*
  * read up to byte_read bytes into read_addr
  * return number of byte read
  */
@@ -781,20 +846,51 @@ int read (inode_t * inode, file_t * file, char * read_addr, int byte_read) {
 	int total_read = 0;
 	while (total_read < byte_read) {
 		/* finish reading current block */
-		if ((fposition + counter) % _BLOCK_SIZE == 0) {
-			addr = (char *) find_next_block(inode, file->position + total_read);
-			fposition = 0;
+		if (file->position % _BLOCK_SIZE == 0) {
+			addr = (char *) find_next_block(inode, file->position);
 			counter = 0;
 		}
-		* (read_addr + total_read) = * (addr + total_read);
+		* (read_addr + total_read) = * (addr + counter);
 
 		counter ++;
 		total_read ++;
+		file->position ++;
 	}
 
 	return byte_read;
 
 }
+
+/*
+ * write up to num_bytes byte to specified file
+ * return number of byte written
+ */
+int write (inode_t * inode, file_t * file, char * write_addr, int num_bytes) {
+
+	int fposition = file->position;
+
+	char * addr = (char *) find_addr_at_offset(inode, fposition);
+
+	int counter = 0;
+	int total_write = 0;
+	while (total_write < num_bytes) {
+		/* current block is full */
+		if (file->position % _BLOCK_SIZE == 0) {
+			addr = (char *) allocate_new_block(inode);
+			counter = 0;
+		}
+		* (addr + counter) = * (write_addr + total_write);
+
+		counter ++;
+		total_write ++;
+
+		inode->size ++;
+		file->position ++;
+	}
+
+	return num_bytes;
+}
+
 
 /* initialize memory and pointers for ramdisk
  * this func is called when user first call ioctl
@@ -1028,6 +1124,31 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			vfree(read_addr);
 			break;
 
+		}
+
+		case RD_WRITE: {
+			write_arg_t write_arg;
+			copy_from_user(&write_arg, (write_arg_t *) arg, sizeof(write_arg_t));
+
+			file_t * file = find_fd (write_arg.pid, write_arg.fd);
+			if (file == &err_file || file->position == FILE_UNINITIALIZED) {
+				copy_to_user((int *) & ( (read_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+				return -1;
+			}
+
+			inode_t * file_inode = file->inode_ptr;
+
+			// only write to reg file
+			if (file_inode->type == DIR_T) {
+				copy_to_user((int *) & ( (read_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+				return -1;
+			}
+
+			int byte_write = write(file_inode, file, write_arg.address, write_arg.num_bytes);
+
+			copy_to_user((int *) & ( (write_arg_t *) arg ) -> retval, &byte_write, sizeof(int));
+
+			break;
 		}
 
 		case RD_CLOSE: {

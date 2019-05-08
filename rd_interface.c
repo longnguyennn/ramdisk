@@ -74,6 +74,20 @@ int rd_read(int input_fd, char * address, int num_bytes) {
 	return arg.retval;
 }
 
+int rd_write(int input_fd, char * address, int num_bytes) {
+	int fd = open("/proc/ramdisk", O_RDONLY);
+	write_arg_t arg;
+	arg.fd = input_fd;
+	arg.address = address;
+	arg.num_bytes = num_bytes;
+	arg.pid = getpid();
+
+	ioctl(fd, RD_WRITE, &arg);
+	close(fd);
+
+	return arg.retval;
+}
+
 int rd_lseek(int input_fd, int offset) {
 	int fd = open("/proc/ramdisk", O_RDONLY );
 	lseek_arg_t arg;
