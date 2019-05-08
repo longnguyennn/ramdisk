@@ -60,6 +60,20 @@ int rd_close(int input_fd) {
 	return arg.retval;
 }
 
+int rd_read(int input_fd, char * address, int num_bytes) {
+	int fd = open("/proc/ramdisk", O_RDONLY);
+	read_arg_t arg;
+	arg.fd = input_fd;
+	arg.address = address;
+	arg.num_bytes = num_bytes;
+	arg.pid = getpid();
+
+	ioctl(fd, RD_READ, &arg);
+	close(fd);
+
+	return arg.retval;
+}
+
 int rd_lseek(int input_fd, int offset) {
 	int fd = open("/proc/ramdisk", O_RDONLY );
 	lseek_arg_t arg;

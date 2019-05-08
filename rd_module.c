@@ -134,7 +134,7 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
 				return &err_dir_entry;
 			}
 
-			block_addr = (*s_indirect_ptr) + block_num * sizeof(int);
+			block_addr = * (void **) (s_indirect_ptr + block_num);
 			dir_entry_t * curr_entry = (dir_entry_t *) block_addr + entry;
 
 			if (checked_entries * sizeof(dir_entry_t) == dir_inode->size) {
@@ -719,6 +719,83 @@ void check_and_clear_process(int pid) {
 	sb_ptr->process_table[proc_idx] = PROC_UNINITIALIZED;
 }
 
+/*
+ * return the address of next content block of this inode with given offset
+ * offset is guaranteed to be multiples of BLOCK_SIZE
+ */
+void * find_next_block(inode_t * inode, int offset) {
+
+	if (offset < _BLOCK_SIZE * NUM_DIRECT_BLOCK_PTR)
+		return inode->location[offset / _BLOCK_SIZE];
+
+	else if (offset < (_BLOCK_SIZE * NUM_DIRECT_BLOCK_PTR + _BLOCK_SIZE * NUM_PTR_PER_BLOCK)) {
+		void ** s_indirect_ptr = inode->location[NUM_DIRECT_BLOCK_PTR];
+		int block_offset = (offset - _BLOCK_SIZE * NUM_DIRECT_BLOCK_PTR) / _BLOCK_SIZE;
+		return * (s_indirect_ptr + block_offset);
+	}
+
+	else {  // double-indirect pointer
+		return NULL;
+	}
+}
+
+/*
+ *
+ */
+void * find_addr_at_offset(inode_t * inode, int offset) {
+
+	void * addr;
+
+	if (offset < NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE) {  // within direct block
+		int direct_block_num = offset / _BLOCK_SIZE;
+		int block_offset = offset - direct_block_num * _BLOCK_SIZE;
+		addr = inode->location[direct_block_num] + block_offset;
+	}
+
+	else if (offset < (NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE + NUM_PTR_PER_BLOCK * _BLOCK_SIZE)) {  // single indirect ptr
+		int direct_block_num = (offset - NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE) / _BLOCK_SIZE;
+		int block_offset = offset - NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE - _BLOCK_SIZE * direct_block_num;
+		addr = * ((void **) inode->location[NUM_DIRECT_BLOCK_PTR] + direct_block_num) + block_offset;
+	}
+
+	else {  // double indirect ptr
+		return addr;
+	}
+
+	return addr;
+}
+
+/*
+ * read up to byte_read bytes into read_addr
+ * return number of byte read
+ */
+int read (inode_t * inode, file_t * file, char * read_addr, int byte_read) {
+
+	int fposition = file->position;
+	if (byte_read + fposition > inode->size)
+		byte_read = inode->size - fposition;
+
+	char * addr = (char *) find_addr_at_offset(inode, fposition);
+
+	int counter = 0;
+	int total_read = 0;
+	while (total_read < byte_read) {
+		/* finish reading current block */
+		if ((fposition + counter) % _BLOCK_SIZE == 0) {
+			addr = (char *) find_next_block(inode, file->position + total_read);
+			fposition = 0;
+			counter = 0;
+		}
+		* (read_addr + total_read) = * (addr + total_read);
+
+		counter ++;
+		total_read ++;
+	}
+
+	return byte_read;
+
+}
+
 /* initialize memory and pointers for ramdisk
  * this func is called when user first call ioctl
  */
@@ -924,6 +1001,35 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			break;
 		}
 
+		case RD_READ: {
+			read_arg_t read_arg;
+			copy_from_user(&read_arg, (read_arg_t *) arg, sizeof(read_arg_t));
+
+			file_t * file = find_fd (read_arg.pid, read_arg.fd);
+			if (file == &err_file || file->position == FILE_UNINITIALIZED) {
+				copy_to_user((int *) & ( (read_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+				return -1;
+			}
+
+			inode_t * file_inode = file->inode_ptr;
+
+			// only read regular file
+			if (file_inode->type == DIR_T) {
+				copy_to_user((int *) & ( (read_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+				return -1;
+			}
+
+			char * read_addr = vmalloc(read_arg.num_bytes);
+			int byte_read = read(file_inode, file, read_addr, read_arg.num_bytes);
+
+			copy_to_user(( (read_arg_t *) arg ) -> address, read_addr, byte_read);
+			copy_to_user((int *) & ( (read_arg_t *) arg ) -> retval, &byte_read, sizeof(int));
+
+			vfree(read_addr);
+			break;
+
+		}
+
 		case RD_CLOSE: {
 			close_arg_t close_arg;
 			copy_from_user(&close_arg, (close_arg_t *) arg, sizeof(close_arg_t));
@@ -963,15 +1069,25 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 
 			// Identify the index node associate with this fd
 			inode_t *lseek_inode = lseek_file->inode_ptr;
-			int file_size = lseek_inode->size;
 
-			// If offset is too large, 
+			// cannot lseek directory
+			if (lseek_inode->type == DIR_T) {
+				copy_to_user((int *) & ( (lseek_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+				return -1;
+			}
+
+			int file_size = lseek_inode->size;
 			int offset = lseek_arg.offset;
-			if (file_size > offset) {
+
+			// offset shouldn't be bigger than file_size
+			if (offset > file_size) {
 				offset = file_size;
 			}
 
-			copy_to_user((int *) & ( (lseek_arg_t *) arg ) -> retval, &offset, sizeof(int));			
+			// set file position to offset
+			lseek_file->position = offset;
+
+			copy_to_user((int *) & ( (lseek_arg_t *) arg ) -> retval, &offset, sizeof(int));
 
 			break;
 		}
@@ -991,7 +1107,7 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 
 			int ret = 0;
 			copy_to_user((int *) & ( (chmod_arg_t *) arg ) -> retval, &ret, sizeof(int));
-			
+
 			break;
 		}
 
