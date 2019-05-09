@@ -245,21 +245,17 @@ inode_t * traverse(char * path_name, char * f_name) {
  * if create successfully, return 0.
  */
 int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
-	my_printk("alloc-3");
 	/* no inode available */
 	if (sb_ptr->num_free_inodes == 0)
 		return -1;
 
 	int flag = 0;
 	dir_entry_t * entry = find_file_entry_in_dir(parent_inode, file_name, &flag);
-	my_printk("alloc-2");
 	/* file with the same name already exist. */
 	if (flag == 1)
 		return -1;
-	my_printk("alloc-1");
 	/* blocks allocated for parent directory are full -> allocate new block to store new entry */
 	if (entry == &err_dir_entry) {
-		my_printk("alloc0");
 		entry = (dir_entry_t *) allocate_new_block(parent_inode);
 
 		if (entry == &err_block)
@@ -368,11 +364,9 @@ int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
 		//}
 
 	}
-	my_printk("alloc1");
 	/* create a new inode */
 	int inode_idx = get_available_inode_idx();
 	inode_t * inode = inode_array_ptr + inode_idx;
-	my_printk("alloc2");
 	inode->type = REG_T;
 	inode->size = 0;
 	inode->access_right = mode;
@@ -967,8 +961,14 @@ int read (inode_t * inode, file_t * file, char * read_addr, int byte_read) {
 int write (inode_t * inode, file_t * file, char * write_addr, int num_bytes) {
 
 	int fposition = file->position;
+	char * addr;
 
-	char * addr = (char *) find_addr_at_offset(inode, fposition);
+	// if we want to write at the end of current file and need to allocate new block
+	if (fposition == inode->size && fposition % _BLOCK_SIZE == 0) {
+		addr = (char *) allocate_new_block(inode);
+	} else {
+		addr = (char *) find_addr_at_offset(inode, fposition);
+	}
 
 	int counter = 0;
 	int total_write = 0;
@@ -1077,7 +1077,6 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			copy_from_user(&creat_arg, (creat_arg_t *) arg, sizeof(creat_arg_t));
 
 			/* find the parent dir inode of given path_name */
-			my_printk("create1");
 			char *path_name = &creat_arg.path_name[1];  // ignore the leading '/' from path_name input
 			char file_name[14];
 
@@ -1088,7 +1087,6 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 				copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
 				break;
 			}
-			my_printk("create2");
 			int create_status = create_reg_file(parent_inode, file_name, creat_arg.mode);
 
 			// create fail
@@ -1096,9 +1094,7 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 				copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
 				break;
 			}
-			my_printk("create3");
 			copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &ioctl_success, sizeof(int));
-			my_printk("create4-done");
 			break;
 		}
 
