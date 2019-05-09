@@ -7,6 +7,7 @@
 #include <linux/sched.h>
 #include <linux/vmalloc.h>
 #include <linux/types.h>
+#include <stddef.h>
 
 #include "rd_module.h"
 #include "rd.h"
@@ -632,24 +633,28 @@ int check_file_permission(int flag, mode_t access_right) {
 file_t * find_fd(int pid, int fd) {
 	int proc_idx = -5;
 	int i = 0;
+	char abc[100];
 
+	my_printk("here1");
 	if (fd > MAX_OPEN_FILE) {
 		return &err_file;
 	}
-
+	my_printk("here2");
 	// Search for the process
 	for (i = 0; i < MAX_NUM_PROCESS; i++) {
+	sprintf(abc, "Process: %i\n", sb_ptr->process_table[i]);
+	my_printk(abc);
 		if (sb_ptr->process_table[i] == pid) {
 			proc_idx = i;
 			break;
 		}
 	}
-
+	my_printk("here3");
 	// return NULL if the process is not found
 	if (proc_idx == -5) {
 		return &err_file;
 	}
-
+	my_printk("here4");
 	file_t *proc_fdt = (file_t *) file_desc_table + proc_idx * MAX_OPEN_FILE;
 	file_t *located_file = (file_t *) proc_fdt + fd;
 
@@ -686,6 +691,69 @@ void check_and_clear_process(int pid) {
 	}
 
 	sb_ptr->process_table[proc_idx] = PROC_UNINITIALIZED;
+}
+
+int remove_data_block(void *data_block_ptr) {
+	ptrdiff_t diff = &data_block_ptr - &content_block_ptr;
+	char abc[100];
+	sprintf(abc, "Diff is %td: 0x%p: 0x%p: 0x%p", diff, data_block_ptr, content_block_ptr, sb_ptr);
+	my_printk(abc);
+	return 0;
+}
+/*
+ * main function to handle the unlinking of an inode
+*/
+int unlink_inode(inode_t *in) {
+	// Pre-calculate to see if need to check single and double pointers
+	char go_single = (in->size > (NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE)) ? 1 : 0;
+	char go_double = (in->size > ((NUM_DIRECT_BLOCK_PTR + (_BLOCK_SIZE/4)) * _BLOCK_SIZE)) ? 1 : 0;
+
+	int block_ptr;
+	int cleared_size = 0;
+	for (block_ptr = 0; block_ptr < NUM_DIRECT_BLOCK_PTR; block_ptr++) {
+		if (cleared_size >= in->size) {
+			return 0;
+		}
+		void *curr_block = &(*in->location[block_ptr]);
+
+		char abc[100];
+		sprintf(abc, "Deleting 0x%p 0x%p, 0x%p: 0x%p, Size: %i", (in->location[block_ptr]), &(in->location[block_ptr]), &curr_block, &content_block_ptr, in->size);
+		my_printk(abc);
+		remove_data_block(&(*in->location[block_ptr]));
+		cleared_size += _BLOCK_SIZE;
+
+	}
+	int sblock_num, block_num;
+	void ** s_indirect_ptr;
+	void *** d_indirect_ptr;
+	if (go_single) {
+		s_indirect_ptr = in->location[NUM_DIRECT_BLOCK_PTR];
+		for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num++) {
+			void *curr_block = (*s_indirect_ptr) + block_num * sizeof(int);
+			remove_data_block(&curr_block);
+			cleared_size += _BLOCK_SIZE;
+			if (cleared_size >= in->size) {
+				return 0;
+			}
+		}
+	}
+
+	if (go_double) {
+		d_indirect_ptr = in->location[NUM_DIRECT_BLOCK_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR];
+		for (sblock_num = 0; sblock_num < NUM_PTR_PER_BLOCK; sblock_num++) {
+			s_indirect_ptr = (* d_indirect_ptr) + sblock_num;
+			for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num ++) {
+				void *curr_block = (*s_indirect_ptr) + block_num * sizeof(int);
+				remove_data_block(&curr_block);
+				cleared_size += _BLOCK_SIZE;
+				if (cleared_size >= in->size) {
+					return 0;
+				}
+			}
+		}
+	}
+
+	return 0;
 }
 
 /* initialize memory and pointers for ramdisk
@@ -738,7 +806,7 @@ void rd_init(void) {
 	printk("0x%p\n", sb_ptr);
 	printk("0x%p\n", inode_array_ptr);
 	printk("0x%p\n", bitmap_ptr);
-	printk("0x%p\n", content_block_ptr);
+	printk("0x%p: %i\n", content_block_ptr);
 
 	/* allocate memory for the file descriptor table */
 	file_desc_table = vmalloc (sizeof(file_t) * MAX_OPEN_FILE * MAX_NUM_PROCESS);
@@ -941,6 +1009,23 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			}
 
 			copy_to_user((int *) & ( (lseek_arg_t *) arg ) -> retval, &offset, sizeof(int));			
+
+			break;
+		}
+
+		case RD_UNLINK: {
+			unlink_arg_t unlink_arg;
+			int retval;
+
+			copy_from_user(&unlink_arg, (unlink_arg_t *) arg, sizeof(unlink_arg_t));
+
+			inode_t *inode = find_inode(&unlink_arg.path_name[1]);
+
+			// TODO: quick error check
+
+			retval = unlink_inode(inode);
+
+			copy_to_user((int *) & ( (unlink_arg_t *) arg ) -> retval, &retval, sizeof(int));
 
 			break;
 		}

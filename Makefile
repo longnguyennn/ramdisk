@@ -10,8 +10,15 @@ unload:
 	rmmod rd_module.ko
 
 test:
-	gcc -o rd_interface.o -c rd_interface.c; gcc test_routine.c rd_interface.o -o test_routine; ./test_routine
+	gcc -o rd_interface.o -c rd_interface.c; 
+	gcc test_routine.c rd_interface.o -o test_routine; 
+	./test_routine
+
+prof_test:
+	gcc prof_test.c rd_interface.c -o prof_test
+	./prof_test
 
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean;
 	-rm test_routine
+	-rm prof_test
