@@ -7,6 +7,7 @@
 #include <linux/sched.h>
 #include <linux/vmalloc.h>
 #include <linux/types.h>
+#include <stddef.h>
 
 #include "rd_module.h"
 #include "rd.h"
@@ -244,21 +245,21 @@ inode_t * traverse(char * path_name, char * f_name) {
  * if create successfully, return 0.
  */
 int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
-
+	my_printk("alloc-3");
 	/* no inode available */
 	if (sb_ptr->num_free_inodes == 0)
 		return -1;
 
 	int flag = 0;
 	dir_entry_t * entry = find_file_entry_in_dir(parent_inode, file_name, &flag);
-
+	my_printk("alloc-2");
 	/* file with the same name already exist. */
 	if (flag == 1)
 		return -1;
-
+	my_printk("alloc-1");
 	/* blocks allocated for parent directory are full -> allocate new block to store new entry */
 	if (entry == &err_dir_entry) {
-
+		my_printk("alloc0");
 		entry = (dir_entry_t *) allocate_new_block(parent_inode);
 
 		if (entry == &err_block)
@@ -367,11 +368,11 @@ int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
 		//}
 
 	}
-
+	my_printk("alloc1");
 	/* create a new inode */
 	int inode_idx = get_available_inode_idx();
 	inode_t * inode = inode_array_ptr + inode_idx;
-
+	my_printk("alloc2");
 	inode->type = REG_T;
 	inode->size = 0;
 	inode->access_right = mode;
@@ -674,11 +675,11 @@ int check_file_permission(int flag, mode_t access_right) {
 file_t * find_fd(int pid, int fd) {
 	int proc_idx = -5;
 	int i = 0;
+	char abc[100];
 
 	if (fd > MAX_OPEN_FILE) {
 		return &err_file;
 	}
-
 	// Search for the process
 	for (i = 0; i < MAX_NUM_PROCESS; i++) {
 		if (sb_ptr->process_table[i] == pid) {
@@ -686,12 +687,10 @@ file_t * find_fd(int pid, int fd) {
 			break;
 		}
 	}
-
 	// return NULL if the process is not found
 	if (proc_idx == -5) {
 		return &err_file;
 	}
-
 	file_t *proc_fdt = (file_t *) file_desc_table + proc_idx * MAX_OPEN_FILE;
 	file_t *located_file = (file_t *) proc_fdt + fd;
 
@@ -728,6 +727,106 @@ void check_and_clear_process(int pid) {
 	}
 
 	sb_ptr->process_table[proc_idx] = PROC_UNINITIALIZED;
+}
+
+/*
+ * Switch a data block indicator in the bitmap
+*/
+int remove_data_block(void *data_block_ptr) {
+	sb_ptr->num_free_blocks -= 1;
+
+	int bytes = (data_block_ptr - content_block_ptr);
+	int diff = bytes / _BLOCK_SIZE;
+	char print_remove_stat[1000];
+
+	// Locating which char and which bit, then clear that bit
+	int region_index = diff / 8;
+	int local_index = diff % 8;
+	bitmap_ptr->array[region_index] &= ~(1 << (7-local_index));
+
+	sprintf(print_remove_stat, "Remove data blk | Bytes: %i, Diff: %i, Char: %i, Bit: %i\n", 
+		bytes,
+		diff,
+		region_index,
+		local_index);
+	my_printk(print_remove_stat);
+
+	return 0;
+}
+
+/*
+ * main function to handle the unlinking of an inode
+*/
+int unlink_inode(inode_t *in) {
+	// Pre-calculate to see if need to check single and double pointers
+	char go_single = (in->size > (NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE)) ? 1 : 0;
+	char go_double = (in->size > ((NUM_DIRECT_BLOCK_PTR + (_BLOCK_SIZE/4)) * _BLOCK_SIZE)) ? 1 : 0;
+
+	sb_ptr->num_free_inodes -= 1;
+
+	// Locating which char and which bit, then clear that bit
+	int diff = in - inode_array_ptr;
+	int region_index = diff / 8;
+	int local_index = diff % 8;
+	sb_ptr->inode_bitmap[region_index] &= ~(1 << (7-local_index));
+
+	// Print stat for debug
+	char print_remove_stat[1000];
+	sprintf(print_remove_stat, "Diff: %i, Char: %i, Bit: %i\n", 
+		diff,
+		region_index,
+		local_index);
+	my_printk(print_remove_stat);
+
+	int block_ptr;
+	int cleared_size = 0; // Keep track of number of bytes cleared so can stop when reach inode's size
+	
+	// Go through the eight direct pointers and remove as needed
+	for (block_ptr = 0; block_ptr < NUM_DIRECT_BLOCK_PTR; block_ptr++) {
+		if (cleared_size >= in->size) {
+			return 0;
+		}
+
+		remove_data_block(in->location[block_ptr]);
+		cleared_size += _BLOCK_SIZE;
+	}
+	
+	int sblock_num, block_num;
+	void ** s_indirect_ptr;
+	void *** d_indirect_ptr;
+
+	if (go_single) {
+		// Go through single indirect pointer and remove as needed
+		s_indirect_ptr = in->location[NUM_DIRECT_BLOCK_PTR];
+		for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num++) {
+			if (cleared_size >= in->size) {
+				return 0;
+			}
+
+			void *curr_block = (*s_indirect_ptr) + block_num * sizeof(int);
+			remove_data_block(curr_block);
+			cleared_size += _BLOCK_SIZE;
+		}
+	}
+
+	if (go_double) {
+		// Go through double indirect pointer and remove as needed
+		d_indirect_ptr = in->location[NUM_DIRECT_BLOCK_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR];
+		for (sblock_num = 0; sblock_num < NUM_PTR_PER_BLOCK; sblock_num++) {
+			s_indirect_ptr = (* d_indirect_ptr) + sblock_num;
+			for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num ++) {
+				if (cleared_size >= in->size) {
+					return 0;
+				}
+
+				void *curr_block = (*s_indirect_ptr) + block_num * sizeof(int);
+				remove_data_block(curr_block);
+				cleared_size += _BLOCK_SIZE;
+			}
+		}
+	}
+
+	return 0;
 }
 
 /*
@@ -942,7 +1041,7 @@ void rd_init(void) {
 	printk("0x%p\n", sb_ptr);
 	printk("0x%p\n", inode_array_ptr);
 	printk("0x%p\n", bitmap_ptr);
-	printk("0x%p\n", content_block_ptr);
+	printk("0x%p: %i\n", content_block_ptr);
 
 	/* allocate memory for the file descriptor table */
 	file_desc_table = vmalloc (sizeof(file_t) * MAX_OPEN_FILE * MAX_NUM_PROCESS);
@@ -978,7 +1077,7 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			copy_from_user(&creat_arg, (creat_arg_t *) arg, sizeof(creat_arg_t));
 
 			/* find the parent dir inode of given path_name */
-
+			my_printk("create1");
 			char *path_name = &creat_arg.path_name[1];  // ignore the leading '/' from path_name input
 			char file_name[14];
 
@@ -989,7 +1088,7 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 				copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
 				break;
 			}
-
+			my_printk("create2");
 			int create_status = create_reg_file(parent_inode, file_name, creat_arg.mode);
 
 			// create fail
@@ -997,8 +1096,9 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 				copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
 				break;
 			}
-
+			my_printk("create3");
 			copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &ioctl_success, sizeof(int));
+			my_printk("create4-done");
 			break;
 		}
 
@@ -1209,6 +1309,25 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 			lseek_file->position = offset;
 
 			copy_to_user((int *) & ( (lseek_arg_t *) arg ) -> retval, &offset, sizeof(int));
+
+			break;
+		}
+
+		case RD_UNLINK: {
+			unlink_arg_t unlink_arg;
+			int retval;
+
+			copy_from_user(&unlink_arg, (unlink_arg_t *) arg, sizeof(unlink_arg_t));
+
+			inode_t *inode = find_inode(&unlink_arg.path_name[1]);
+			if (inode == &err_inode) {
+				copy_to_user((int *) & ( (unlink_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+				return -1;
+			}
+
+			retval = unlink_inode(inode);
+
+			copy_to_user((int *) & ( (unlink_arg_t *) arg ) -> retval, &retval, sizeof(int));
 
 			break;
 		}

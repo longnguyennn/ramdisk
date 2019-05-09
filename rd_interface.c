@@ -102,6 +102,18 @@ int rd_lseek(int input_fd, int offset) {
 	return arg.retval;
 }
 
+int rd_unlink(char *pathname) {
+	int fd = open("/proc/ramdisk", O_RDONLY );
+	unlink_arg_t arg;
+	strcpy(arg.path_name, pathname);
+
+	ioctl(fd, RD_UNLINK, &arg);
+
+	close(fd);
+
+	return arg.retval;
+}
+
 int rd_chmod(char *pathname, mode_t mode) {
 	int fd = open("/proc/ramdisk", O_RDONLY);
 	chmod_arg_t arg;

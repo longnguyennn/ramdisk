@@ -67,6 +67,11 @@ typedef struct {
 
 typedef struct {
 	char path_name[MAX_PATHNAME_LENGTH];
+	int retval;
+} unlink_arg_t;
+
+typedef struct {
+	char path_name[MAX_PATHNAME_LENGTH];
 	mode_t mode;
 	int retval;
 } chmod_arg_t;
