@@ -110,7 +110,7 @@ dir_entry_t * find_file_entry_in_dir(inode_t * dir_inode, char * file_name, int 
 			}
 
 			// found an entry with name == file_name
-			if ( strcmp( curr_entry->fname, file_name ) == 0 ) {
+			if ( curr_entry->inode_number != DIR_ENTRY_UNINITIALIZED && strcmp( curr_entry->fname, file_name ) == 0 ) {
 				* flag = 1;
 				return curr_entry;
 			}
@@ -755,23 +755,87 @@ int remove_data_block(void *data_block_ptr) {
 }
 
 /*
+ * Find entry with the same inode_number and set it to uninit
+*/
+int remove_dir_entry(inode_t *in, int inode_num) {
+	int loc = inode_num / sizeof(dir_entry_t);
+	int i, j;
+	int sblock_num, block_num;
+	void ** s_indirect_ptr;
+	void *** d_indirect_ptr;
+
+	if (loc < ((NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE)/sizeof(dir_entry_t))) {
+		my_printk("remove_dir_entry: First 8 pointers");
+		for (i = 0; i < NUM_DIRECT_BLOCK_PTR; i++) {
+			my_printk("here1");
+			for (j = 0; j < _BLOCK_SIZE/sizeof(dir_entry_t); j++) {
+				my_printk("here2");
+				dir_entry_t *curr_entry = (dir_entry_t *) in->location[i] + j;
+				my_printk("here3");
+				if (curr_entry->inode_number == inode_num) {
+					my_printk("here3-equal");
+					curr_entry->inode_number = DIR_ENTRY_UNINITIALIZED;
+					return 0;
+				}
+				my_printk("here4");
+			}
+		}
+	} else if (loc < ((NUM_DIRECT_BLOCK_PTR + (_BLOCK_SIZE/4)) * _BLOCK_SIZE) / sizeof(dir_entry_t)) {
+		my_printk("remove_dir_entry: Indirect single");
+		s_indirect_ptr = in->location[NUM_DIRECT_BLOCK_PTR];
+		for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num++) {
+			void *curr_block = (*s_indirect_ptr) + block_num * sizeof(int);
+			
+			for (j = 0; j < _BLOCK_SIZE/sizeof(dir_entry_t); j++) {
+				dir_entry_t *curr_entry = (dir_entry_t *) curr_block + j;
+				if (curr_entry->inode_number == inode_num) {
+					curr_entry->inode_number = DIR_ENTRY_UNINITIALIZED;
+					return 0;
+				}
+			}
+		}
+	} else {
+		my_printk("remove_dir_entry: Indirect double");
+		d_indirect_ptr = in->location[NUM_DIRECT_BLOCK_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR];
+		for (sblock_num = 0; sblock_num < NUM_PTR_PER_BLOCK; sblock_num++) {
+			s_indirect_ptr = (* d_indirect_ptr) + sblock_num;
+			for (block_num = 0; block_num < NUM_PTR_PER_BLOCK; block_num ++) {
+				void *curr_block = (*s_indirect_ptr) + block_num * sizeof(int);
+				for (j = 0; j < _BLOCK_SIZE/sizeof(dir_entry_t); j++) {
+					dir_entry_t *curr_entry = (dir_entry_t *) curr_block + j;
+					if (curr_entry->inode_number == inode_num) {
+						curr_entry->inode_number = DIR_ENTRY_UNINITIALIZED;
+						return 0;
+					}
+				}
+			}
+		}
+	}
+
+}
+
+/*
  * main function to handle the unlinking of an inode
+ * Increase the number of free inode count
+ * Update parent size and their dir_entry_t for this
+ * Run through 10 location ptrs (direct, indrect) and delete blocks as needed
 */
 int unlink_inode(inode_t *in, inode_t *parent) {
 	// Pre-calculate to see if need to check single and double pointers
 	char go_single = (in->size > (NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE)) ? 1 : 0;
 	char go_double = (in->size > ((NUM_DIRECT_BLOCK_PTR + (_BLOCK_SIZE/4)) * _BLOCK_SIZE)) ? 1 : 0;
 
-	sb_ptr->num_free_inodes -= 1;
-
-	// Update the parent's size
-	// parent->size -= sizeof(dir_entry_t);
+	sb_ptr->num_free_inodes += 1;
 
 	// Locating which char and which bit, then clear that bit
 	int diff = in - inode_array_ptr;
 	int region_index = diff / 8;
 	int local_index = diff % 8;
 	sb_ptr->inode_bitmap[region_index] &= ~(1 << (7-local_index));
+
+	// Update the parent's size
+	parent->size -= sizeof(dir_entry_t);
+	remove_dir_entry(in, diff);
 
 	// Print stat for debug
 	// char print_remove_stat[1000];

@@ -17,6 +17,7 @@
 
 #define FILE_UNINITIALIZED -2
 #define PROC_UNINITIALIZED -2
+#define DIR_ENTRY_UNINITIALIZED -2
 
 #define DIR_T 0
 #define REG_T 1
