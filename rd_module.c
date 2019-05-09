@@ -742,6 +742,7 @@ int remove_data_block(void *data_block_ptr) {
 	int local_index = diff % 8;
 	bitmap_ptr->array[region_index] &= ~(1 << (7-local_index));
 
+
 	// char print_remove_stat[1000];
 	// sprintf(print_remove_stat, "Remove data blk | Bytes: %i, Diff: %i, Char: %i, Bit: %i\n", 
 	// 	bytes,
@@ -782,7 +783,7 @@ int unlink_inode(inode_t *in, inode_t *parent) {
 
 	int block_ptr;
 	int cleared_size = 0; // Keep track of number of bytes cleared so can stop when reach inode's size
-	
+
 	// Go through the eight direct pointers and remove as needed
 	for (block_ptr = 0; block_ptr < NUM_DIRECT_BLOCK_PTR; block_ptr++) {
 		if (cleared_size >= in->size) {
@@ -792,7 +793,7 @@ int unlink_inode(inode_t *in, inode_t *parent) {
 		remove_data_block(in->location[block_ptr]);
 		cleared_size += _BLOCK_SIZE;
 	}
-	
+
 	int sblock_num, block_num;
 	void ** s_indirect_ptr;
 	void *** d_indirect_ptr;
@@ -932,8 +933,58 @@ void * allocate_new_block(inode_t * inode) {
 
 	/* allocate double indirect block ptr */
 	else {
-		my_printk("allocate_new_block: not enough free blocks for double indirect");
-		return &err_block;
+
+		int d_indirect_size = size - (NUM_DIRECT_BLOCK_PTR + NUM_PTR_PER_BLOCK) * _BLOCK_SIZE;
+		int d_indirect_idx = NUM_DIRECT_BLOCK_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR;
+
+		// need to allocate 1 double indirect block, 1 single indirect block and 1 content block
+		if (d_indirect_size == 0) {
+
+			if (sb_ptr->num_free_blocks < 3)
+				return &err_block;
+
+			inode->location[d_indirect_idx] = get_available_block();
+
+			void ** s_indirect_ptr = get_available_block();
+			void * content_block = get_available_block();
+
+			* (void ***) inode->location[d_indirect_idx] = s_indirect_ptr;
+			* s_indirect_ptr = content_block;
+
+			return content_block;
+
+		}
+
+		// need to allocate 1 single indirect block, 1 content block
+		else if (d_indirect_size % (NUM_PTR_PER_BLOCK * _BLOCK_SIZE) == 0) {
+
+			if (sb_ptr->num_free_blocks < 2)
+				return &err_block;
+
+			int next_s_indirect_block_ptr = d_indirect_size / (NUM_PTR_PER_BLOCK * _BLOCK_SIZE);
+
+			void ** s_indirect_ptr = get_available_block();
+			void * content_block = get_available_block();
+
+			* ((void ***) inode->location[d_indirect_idx] + next_s_indirect_block_ptr) = s_indirect_ptr;
+			* s_indirect_ptr = content_block;
+
+			return content_block;
+		}
+
+		// need to allocate 1 content block
+		else {
+
+			int next_s_indirect_block_ptr = d_indirect_size / (NUM_PTR_PER_BLOCK * _BLOCK_SIZE);
+			int next_content_block_num = (d_indirect_size - next_s_indirect_block_ptr * NUM_PTR_PER_BLOCK * _BLOCK_SIZE) / _BLOCK_SIZE;
+
+			void * content_block = get_available_block();
+
+			void ** s_indirect_ptr = * ((void ***) inode->location[d_indirect_idx] + next_s_indirect_block_ptr);
+			* (s_indirect_ptr + next_content_block_num) = content_block;
+
+			return content_block;
+		}
 	}
 }
 
@@ -977,10 +1028,7 @@ int write (inode_t * inode, file_t * file, char * write_addr, int num_bytes) {
 	int fposition = file->position;
 	char * addr;
 
-	// if we want to write at the end of current file and need to allocate new block
-	if (fposition == inode->size && fposition % _BLOCK_SIZE == 0) {
-		addr = (char *) allocate_new_block(inode);
-	} else {
+	if (fposition < inode->size || fposition % _BLOCK_SIZE != 0) {
 		addr = (char *) find_addr_at_offset(inode, fposition);
 	}
 
@@ -990,6 +1038,11 @@ int write (inode_t * inode, file_t * file, char * write_addr, int num_bytes) {
 		/* current block is full */
 		if (file->position % _BLOCK_SIZE == 0) {
 			addr = (char *) allocate_new_block(inode);
+
+			/* cannot allocate new block */
+			if (addr == &err_block)
+				return total_write;
+
 			counter = 0;
 		}
 		* (addr + counter) = * (write_addr + total_write);
