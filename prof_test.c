@@ -23,12 +23,14 @@
 // #define's to control what tests are performed,
 // comment out a test if you do not wish to perform it
 
-// #define TEST1
+#define TEST1
 #define TEST2
 #define TEST3
 #define TEST4
 #define TEST5
-// #define TEST6
+#define TEST6
+
+#define USE_RAMDISK
 
 // File modes
 #define RD  (S_IRUSR | S_IRGRP | S_IROTH)
@@ -40,10 +42,10 @@
 #define READWRITE  O_RDWR
 #define WRITEONLY  O_WRONLY
 
-#define USE_RAMDISK 1
+#ifdef USE_RAMDISK
+
 // Insert a string for the pathname prefix here. For the ramdisk, it should be
 // NULL
-#ifdef USE_RAMDISK
 #define PATH_PREFIX ""
 #else
 #define PATH_PREFIX "."
@@ -77,7 +79,7 @@
 // double indirect block pointers are tested
 
 #define TEST_SINGLE_INDIRECT
-#define TEST_DOUBLE_INDIRECT
+// #define TEST_DOUBLE_INDIRECT
 
 
 #define MAX_FILES 1023
@@ -104,10 +106,6 @@ int main () {
   memset (data2, '2', sizeof (data2));
   memset (data3, '3', sizeof (data3));
 
-// printf("Start");
-// char *pathname_mkdir = "/hi";
-// retval = rd_mkdir(pathname_mkdir);
-// printf("%i", retval);
 
 #ifdef TEST1
 
@@ -120,8 +118,8 @@ int main () {
     retval = CREAT (pathname, RD);
     
     if (retval < 0) {
-      fprintf (stderr, "[TEST1] creat: File creation error! status: %i %d (%s)\n",
-	       i, retval, pathname);
+      fprintf (stderr, "creat: File creation error! status: %d (%s)\n",
+	       retval, pathname);
       perror("Error!");
       
       if (i != MAX_FILES)
@@ -138,8 +136,8 @@ int main () {
     retval = UNLINK (pathname);
     
     if (retval < 0) {
-      fprintf (stderr, "[TEST1] unlink: File deletion error! status: %d\n",
-	       retval);
+      fprintf (stderr, "unlink: File deletion error! status: %i %d\n",
+	       i, retval);
       
       exit(EXIT_FAILURE);
     }
@@ -148,27 +146,26 @@ int main () {
   }
 
 #endif // TEST1
-
+  
 #ifdef TEST2
 
   /* ****TEST 2: LARGEST file size**** */
 
   
   /* Generate one LARGEST file */
-  printf("[+TEST2] Creat\n");
   retval = CREAT (PATH_PREFIX "/bigfile", RW);
-  printf("%i\n", retval);
+
   if (retval < 0) {
-    fprintf (stderr, "[TEST2] creat: File creation error! status: %d\n",
+    fprintf (stderr, "creat: File creation error! status: %d\n",
 	     retval);
 
     exit(EXIT_FAILURE);
   }
-  printf("[+TEST2] Open\n");
+
   retval =  OPEN (PATH_PREFIX "/bigfile", READWRITE); /* Open file to write to it */
   
   if (retval < 0) {
-    fprintf (stderr, "[TEST2] open: File open error! status: %d\n",
+    fprintf (stderr, "open: File open error! status: %d\n",
 	     retval);
 
     exit(EXIT_FAILURE);
@@ -176,12 +173,11 @@ int main () {
 
   fd = retval;			/* Assign valid fd */
 
-  printf("[+TEST2] Write\n");
   /* Try writing to all direct data blocks */
   retval = WRITE (fd, data1, sizeof(data1));
   
   if (retval < 0) {
-    fprintf (stderr, "[TEST2] write: File write STAGE1 error! status: %d\n",
+    fprintf (stderr, "write: File write STAGE1 error! status: %d\n",
 	     retval);
 
     exit(EXIT_FAILURE);
@@ -193,13 +189,11 @@ int main () {
   retval = WRITE (fd, data2, sizeof(data2));
   
   if (retval < 0) {
-    fprintf (stderr, "[TEST2] write: File write STAGE2 error! status: %d\n",
+    fprintf (stderr, "write: File write STAGE2 error! status: %d\n",
 	     retval);
 
     exit(EXIT_FAILURE);
   }
-
-  printf("[+TEST2] SINGLE INDIRECT PASSED\n");
 
 #ifdef TEST_DOUBLE_INDIRECT
 
@@ -207,7 +201,7 @@ int main () {
   retval = WRITE (fd, data3, sizeof(data3));
   
   if (retval < 0) {
-    fprintf (stderr, "[TEST2] write: File write STAGE3 error! status: %d\n",
+    fprintf (stderr, "write: File write STAGE3 error! status: %d\n",
 	     retval);
 
     exit(EXIT_FAILURE);
@@ -297,7 +291,7 @@ int main () {
 #ifdef TEST4
 
   /* ****TEST 4: Check permissions**** */
-  retval = CHMOD("bigfile", RD); // Change bigfile to read-only
+  retval = CHMOD(PATH_PREFIX "/bigfile", RD); // Change bigfile to read-only
   
   if (retval < 0) {
     fprintf (stderr, "chmod: Failed to change mode! status: %d\n",
@@ -364,7 +358,9 @@ int main () {
 #ifdef TEST6
 
   /* ****TEST 6: 2 process test**** */
+  
   if((retval = fork())) {
+
     if(retval == -1) {
       fprintf(stderr, "Failed to fork\n");
       exit(EXIT_FAILURE);
@@ -394,10 +390,10 @@ int main () {
       retval = CREAT (pathname, RD);
       
       if (retval < 0) {
-      fprintf (stderr, "(Child) create: File creation error! status: %d\n", 
-        retval);
+	fprintf (stderr, "(Child) create: File creation error! status: %d\n", 
+		 retval);
 
-      exit(EXIT_FAILURE);
+	exit(EXIT_FAILURE);
       }
       
       memset (pathname, 0, 80);
