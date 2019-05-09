@@ -1,1 +1,5 @@
 Long Nguyen, Tri Hoang
+Command sequence:
+    ./run.sh
+    make prof_test
+    ./prof_test
