@@ -199,6 +199,8 @@ int main () {
     exit(EXIT_FAILURE);
   }
 
+  printf("[+TEST2] SINGLE INDIRECT PASSED\n");
+
 #ifdef TEST_DOUBLE_INDIRECT
 
   /* Try writing to all double-indirect data blocks */
