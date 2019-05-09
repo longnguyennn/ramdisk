@@ -912,7 +912,11 @@ void * find_next_block(inode_t * inode, int offset) {
 	}
 
 	else {  // double-indirect pointer
-		return NULL;
+		void *** d_indirect_ptr = inode->location[NUM_DIRECT_BLOCK_PTR + NUM_SINGLE_INDIRECT_BLOCK_PTR];
+		int s_indirect_offset = (offset - (NUM_DIRECT_BLOCK_PTR + NUM_PTR_PER_BLOCK) * _BLOCK_SIZE) / (NUM_PTR_PER_BLOCK * _BLOCK_SIZE);
+		int content_block_offset = (offset - (NUM_DIRECT_BLOCK_PTR + NUM_PTR_PER_BLOCK) * _BLOCK_SIZE - s_indirect_offset * NUM_PTR_PER_BLOCK * _BLOCK_SIZE) / _BLOCK_SIZE;
+
+		return * ( (* (d_indirect_ptr + s_indirect_offset) ) + content_block_offset );
 	}
 }
 
