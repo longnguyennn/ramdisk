@@ -735,7 +735,6 @@ void check_and_clear_process(int pid) {
 	sb_ptr->process_table[proc_idx] = PROC_UNINITIALIZED;
 }
 
-<<<<<<< HEAD
 int remove_data_block(void *data_block_ptr) {
 	ptrdiff_t diff = &data_block_ptr - &content_block_ptr;
 	char abc[100];
@@ -799,7 +798,6 @@ int unlink_inode(inode_t *in) {
 	return 0;
 }
 
-=======
 /*
  * return the address of next content block of this inode with given offset
  * offset is guaranteed to be multiples of BLOCK_SIZE
@@ -962,7 +960,6 @@ int write (inode_t * inode, file_t * file, char * write_addr, int num_bytes) {
 }
 
 
->>>>>>> 387199e338ca9dd04f58459a41c1b50cb76a2c2c
 /* initialize memory and pointers for ramdisk
  * this func is called when user first call ioctl
  */
