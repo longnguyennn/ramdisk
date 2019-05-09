@@ -252,14 +252,19 @@ int create_reg_file ( inode_t * parent_inode, char * file_name, mode_t mode ) {
 	int flag = 0;
 	dir_entry_t * entry = find_file_entry_in_dir(parent_inode, file_name, &flag);
 	/* file with the same name already exist. */
-	if (flag == 1)
+	if (flag == 1) {
+		my_printk("file with the same name already exist");
 		return -1;
+	}
 	/* blocks allocated for parent directory are full -> allocate new block to store new entry */
 	if (entry == &err_dir_entry) {
 		entry = (dir_entry_t *) allocate_new_block(parent_inode);
 
-		if (entry == &err_block)
+		if (entry == &err_block) {
+			my_printk("Can't allocate new block");
 			return -1;
+		}
+			
 
 		/* there is no block available */
 		//if (sb_ptr->num_free_blocks == 0)
@@ -731,19 +736,19 @@ int remove_data_block(void *data_block_ptr) {
 
 	int bytes = (data_block_ptr - content_block_ptr);
 	int diff = bytes / _BLOCK_SIZE;
-	char print_remove_stat[1000];
 
 	// Locating which char and which bit, then clear that bit
 	int region_index = diff / 8;
 	int local_index = diff % 8;
 	bitmap_ptr->array[region_index] &= ~(1 << (7-local_index));
 
-	sprintf(print_remove_stat, "Remove data blk | Bytes: %i, Diff: %i, Char: %i, Bit: %i\n", 
-		bytes,
-		diff,
-		region_index,
-		local_index);
-	my_printk(print_remove_stat);
+	// char print_remove_stat[1000];
+	// sprintf(print_remove_stat, "Remove data blk | Bytes: %i, Diff: %i, Char: %i, Bit: %i\n", 
+	// 	bytes,
+	// 	diff,
+	// 	region_index,
+	// 	local_index);
+	// my_printk(print_remove_stat);
 
 	return 0;
 }
@@ -751,12 +756,15 @@ int remove_data_block(void *data_block_ptr) {
 /*
  * main function to handle the unlinking of an inode
 */
-int unlink_inode(inode_t *in) {
+int unlink_inode(inode_t *in, inode_t *parent) {
 	// Pre-calculate to see if need to check single and double pointers
 	char go_single = (in->size > (NUM_DIRECT_BLOCK_PTR * _BLOCK_SIZE)) ? 1 : 0;
 	char go_double = (in->size > ((NUM_DIRECT_BLOCK_PTR + (_BLOCK_SIZE/4)) * _BLOCK_SIZE)) ? 1 : 0;
 
 	sb_ptr->num_free_inodes -= 1;
+
+	// Update the parent's size
+	// parent->size -= sizeof(dir_entry_t);
 
 	// Locating which char and which bit, then clear that bit
 	int diff = in - inode_array_ptr;
@@ -765,12 +773,12 @@ int unlink_inode(inode_t *in) {
 	sb_ptr->inode_bitmap[region_index] &= ~(1 << (7-local_index));
 
 	// Print stat for debug
-	char print_remove_stat[1000];
-	sprintf(print_remove_stat, "Diff: %i, Char: %i, Bit: %i\n", 
-		diff,
-		region_index,
-		local_index);
-	my_printk(print_remove_stat);
+	// char print_remove_stat[1000];
+	// sprintf(print_remove_stat, "Diff: %i, Char: %i, Bit: %i\n", 
+	// 	diff,
+	// 	region_index,
+	// 	local_index);
+	// my_printk(print_remove_stat);
 
 	int block_ptr;
 	int cleared_size = 0; // Keep track of number of bytes cleared so can stop when reach inode's size
@@ -875,8 +883,10 @@ void * find_addr_at_offset(inode_t * inode, int offset) {
  */
 void * allocate_new_block(inode_t * inode) {
 
-	if (sb_ptr->num_free_blocks == 0)
+	if (sb_ptr->num_free_blocks == 0) {
+		my_printk("allocate_new_block: not enough free blocks");
 		return &err_block;
+	}
 
 	int size = inode->size;
 
@@ -895,8 +905,11 @@ void * allocate_new_block(inode_t * inode) {
 		// allocate a new block for single indirect block ptr and a content block */
 		if (single_indirect_size == 0) {
 
-			if (sb_ptr->num_free_blocks < 2)
+			if (sb_ptr->num_free_blocks < 2) {
+				my_printk("allocate_new_block: not enough free blocks for single indirect");
 				return &err_block;
+			}
+				
 
 			inode->location[NUM_DIRECT_BLOCK_PTR] = get_available_block();
 			void * content_block = get_available_block();
@@ -919,6 +932,7 @@ void * allocate_new_block(inode_t * inode) {
 
 	/* allocate double indirect block ptr */
 	else {
+		my_printk("allocate_new_block: not enough free blocks for double indirect");
 		return &err_block;
 	}
 }
@@ -1084,6 +1098,7 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 
 			// pathname prefix invalid
 			if (parent_inode == &err_inode) {
+				my_printk("Pathname invalid");
 				copy_to_user((int *) & ( (creat_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
 				break;
 			}
@@ -1312,16 +1327,25 @@ static int rd_ioctl (struct inode * inode, struct file * file,
 		case RD_UNLINK: {
 			unlink_arg_t unlink_arg;
 			int retval;
+			char *filename[15];
 
 			copy_from_user(&unlink_arg, (unlink_arg_t *) arg, sizeof(unlink_arg_t));
 
 			inode_t *inode = find_inode(&unlink_arg.path_name[1]);
 			if (inode == &err_inode) {
+				my_printk("UNLINK: Can't find the inode");
 				copy_to_user((int *) & ( (unlink_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
 				return -1;
 			}
 
-			retval = unlink_inode(inode);
+			inode_t *parent = traverse(&unlink_arg.path_name[1], filename);
+			if (parent == &err_inode) {
+				my_printk("UNLINK: Can't find the parent");
+				copy_to_user((int *) & ( (unlink_arg_t *) arg ) -> retval, &ioctl_error, sizeof(int));
+				return -1;
+			}
+
+			retval = unlink_inode(inode, parent);
 
 			copy_to_user((int *) & ( (unlink_arg_t *) arg ) -> retval, &retval, sizeof(int));
 
