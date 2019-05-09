@@ -30,6 +30,22 @@ typedef struct {
 } mkdir_arg_t;
 
 typedef struct {
+	int fd;
+	char * address;
+	int num_bytes;
+	int pid;
+	int retval;
+} read_arg_t;
+
+typedef struct {
+	int fd;
+	char * address;
+	int num_bytes;
+	int pid;
+	int retval;
+} write_arg_t;
+
+typedef struct {
 	char path_name[MAX_PATHNAME_LENGTH];
 	int flags;
 	int pid;
