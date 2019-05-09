@@ -963,10 +963,7 @@ int write (inode_t * inode, file_t * file, char * write_addr, int num_bytes) {
 	int fposition = file->position;
 	char * addr;
 
-	// if we want to write at the end of current file and need to allocate new block
-	if (fposition == inode->size && fposition % _BLOCK_SIZE == 0) {
-		addr = (char *) allocate_new_block(inode);
-	} else {
+	if (fposition < inode->size || fposition % _BLOCK_SIZE != 0) {
 		addr = (char *) find_addr_at_offset(inode, fposition);
 	}
 
